@@ -10,99 +10,92 @@
 <meta name="apple-mobile-web-app-status-bar-style" content="default">
 <meta name="apple-mobile-web-app-title" content="백석 발주">
 <style>
-  *{box-sizing:border-box;margin:0;padding:0;-webkit-tap-highlight-color:transparent}
-  html,body{width:100%;height:100%;overflow-x:hidden}
-  body{font-family:-apple-system,BlinkMacSystemFont,'Apple SD Gothic Neo','Malgun Gothic',sans-serif;background:#f5f5f7;min-height:100vh}
-  .screen{display:none}.screen.active{display:block}
-  .container{width:100%;max-width:500px;margin:0 auto;padding:24px 20px 60px}
-
-  /* S1 */
-  .brand{font-size:24px;font-weight:700;color:#1c1c1e;margin-bottom:6px}
-  .brand-loc{display:inline-block;background:#ede9fe;color:#5b21b6;font-size:13px;font-weight:600;padding:4px 12px;border-radius:20px;margin-bottom:24px}
-  .s1-label{font-size:13px;font-weight:600;color:#8e8e93;letter-spacing:.04em;margin-bottom:12px}
-  .type-card{display:flex;align-items:center;gap:16px;padding:20px 18px;border-radius:16px;border:2px solid #e0e0e0;background:#fff;margin-bottom:12px;cursor:pointer;transition:all .15s;-webkit-tap-highlight-color:transparent}
-  .type-card:active{opacity:.75;transform:scale(.98)}
-  .tc-order{border-color:#7c3aed;background:#faf5ff}
-  .tc-stock{border-color:#059669;background:#f0fdf9}
-  .tc-icon{font-size:34px;flex-shrink:0}
-  .tc-main{font-size:17px;font-weight:700;color:#1c1c1e}
-  .tc-sub{font-size:13px;color:#8e8e93;margin-top:3px}
-  .tc-time{margin-left:auto;font-size:13px;font-weight:700;padding:5px 12px;border-radius:20px;white-space:nowrap;flex-shrink:0}
-  .tc-order .tc-time{background:#7c3aed;color:#fff}
-  .tc-stock .tc-time{background:#059669;color:#fff}
-
-  /* 공통 헤더 */
-  .top-bar{display:flex;align-items:center;gap:12px;margin-bottom:22px}
-  .back-btn{width:40px;height:40px;border-radius:12px;background:#fff;border:1.5px solid #e0e0e0;display:flex;align-items:center;justify-content:center;font-size:20px;color:#636366;cursor:pointer;flex-shrink:0}
-  .page-title{font-size:18px;font-weight:700;color:#1c1c1e}
-  .page-sub{font-size:13px;color:#8e8e93;margin-top:2px}
-
-  /* 날짜 */
-  .date-pill{display:flex;align-items:center;gap:10px;background:#fff;border:1.5px solid #e0e0e0;border-radius:12px;padding:12px 16px;margin-bottom:22px}
-  .dp-label{font-size:12px;color:#8e8e93}
-  .dp-val{font-size:16px;font-weight:700;color:#1c1c1e}
-  .dp-note{font-size:12px;color:#8e8e93;margin-left:auto}
-
-  /* 섹션 */
-  .sec-title{font-size:12px;font-weight:700;color:#8e8e93;letter-spacing:.04em;margin:22px 0 10px;padding-bottom:7px;border-bottom:1.5px solid #e0e0e0}
-
-  /* 필드 */
-  .field-card{display:flex;align-items:center;justify-content:space-between;padding:16px 18px;border-radius:14px;background:#fff;border:1.5px solid #e0e0e0;margin-bottom:10px;cursor:pointer;transition:border-color .15s}
-  .field-card:active{border-color:#7c3aed}
-  .stock-card:active{border-color:#059669 !important}
-  .fc-label{font-size:16px;font-weight:600;color:#1c1c1e}
-  .fc-hint{font-size:12px;color:#8e8e93;margin-top:4px}
-  .fc-right{display:flex;align-items:baseline;gap:5px}
-  .fc-val{font-size:28px;font-weight:700;color:#1c1c1e;min-width:52px;text-align:right}
-  .fc-val.empty{color:#c7c7cc}
-  .fc-unit{font-size:14px;color:#8e8e93}
-
-  /* 체크칩 */
-  .check-row{display:flex;gap:10px;flex-wrap:wrap}
-  .check-chip{padding:10px 18px;border-radius:20px;font-size:15px;font-weight:600;border:1.5px solid #e0e0e0;background:#fff;color:#636366;cursor:pointer;transition:all .15s;user-select:none}
-  .check-chip:active{opacity:.7}
-  .chip-on-o{background:#ede9fe;border-color:#7c3aed;color:#5b21b6}
-  .chip-on-s{background:#d1fae5;border-color:#059669;color:#065f46}
-
-  /* 제출 */
-  .submit-btn{width:100%;padding:18px;border-radius:16px;font-size:17px;font-weight:700;border:none;cursor:pointer;margin-top:28px;transition:opacity .15s}
-  .submit-btn:active{opacity:.8}
-  .sb-o{background:#7c3aed;color:#fff}
-  .sb-s{background:#059669;color:#fff}
-
-  /* 다이얼 */
-  .dial-ov{display:none;position:fixed;inset:0;background:rgba(0,0,0,.5);z-index:500;align-items:flex-end;justify-content:center}
-  .dial-ov.show{display:flex}
-  .dial-sheet{background:#fff;border-radius:24px 24px 0 0;padding:20px 16px 40px;width:100%}
-  .dial-lbl{font-size:13px;color:#8e8e93;margin-bottom:6px;padding:0 4px}
-  .dial-disp{font-size:52px;font-weight:700;text-align:right;padding:8px 8px 14px;border-bottom:1.5px solid #e0e0e0;margin-bottom:14px;min-height:80px;display:flex;align-items:center;justify-content:flex-end;gap:8px}
-  .d-num{color:#1c1c1e}
-  .d-hint{font-size:18px;color:#c7c7cc;font-weight:400}
-  .d-unit{font-size:20px;color:#8e8e93;font-weight:400}
-  .dk-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:10px}
-  .dk{height:64px;border-radius:14px;background:#f5f5f7;border:none;font-size:24px;font-weight:600;color:#1c1c1e;display:flex;align-items:center;justify-content:center;cursor:pointer;user-select:none;transition:background .08s}
-  .dk:active{background:#e0e0e0}
-  .dk-sp{background:#e8e8ed;font-size:18px}
-  .dk-ok{color:#fff;font-size:17px;font-weight:700;grid-column:1/-1;height:58px;border-radius:16px}
-  .dk-ok-o{background:#7c3aed}
-  .dk-ok-s{background:#059669}
-
-  /* 완료 */
-  .done-wrap{padding:48px 0 24px;text-align:center}
-  .done-icon{font-size:64px;margin-bottom:18px}
-  .done-title{font-size:22px;font-weight:700;color:#1c1c1e;margin-bottom:8px}
-  .done-sub{font-size:15px;color:#636366;line-height:1.6;margin-bottom:24px}
-  .msg-preview{text-align:left;background:#f5f5f7;border-radius:14px;padding:16px 18px}
-  .mp-label{font-size:12px;color:#8e8e93;margin-bottom:10px}
-  .mp-body{font-size:13px;color:#1c1c1e;line-height:2;font-family:'Courier New',monospace;white-space:pre;overflow-x:auto}
-  .reset-btn{margin-top:16px;width:100%;padding:16px;border-radius:14px;background:#fff;border:1.5px solid #e0e0e0;font-size:16px;color:#636366;cursor:pointer}
-
-  /* 로딩 */
-  .loading-ov{display:none;position:fixed;inset:0;background:rgba(255,255,255,.9);z-index:999;flex-direction:column;align-items:center;justify-content:center;gap:16px}
-  .loading-ov.show{display:flex}
-  .spinner{width:44px;height:44px;border:4px solid #e0e0e0;border-top-color:#7c3aed;border-radius:50%;animation:spin .8s linear infinite}
-  .loading-text{font-size:15px;color:#636366}
-  @keyframes spin{to{transform:rotate(360deg)}}
+*{box-sizing:border-box;margin:0;padding:0;-webkit-tap-highlight-color:transparent}
+html,body{width:100%;height:100%;overflow-x:hidden}
+body{font-family:-apple-system,BlinkMacSystemFont,'Apple SD Gothic Neo','Malgun Gothic',sans-serif;background:#f5f5f7;min-height:100vh}
+.screen{display:none}.screen.active{display:block}
+.container{width:100%;max-width:500px;margin:0 auto;padding:24px 20px 60px}
+/* S1 */
+.brand{font-size:24px;font-weight:700;color:#1c1c1e;margin-bottom:6px}
+.brand-loc{display:inline-block;background:#ede9fe;color:#5b21b6;font-size:13px;font-weight:600;padding:4px 12px;border-radius:20px;margin-bottom:24px}
+.s1-label{font-size:13px;font-weight:600;color:#8e8e93;letter-spacing:.04em;margin-bottom:12px}
+.type-card{display:flex;align-items:center;gap:16px;padding:20px 18px;border-radius:16px;border:2px solid #e0e0e0;background:#fff;margin-bottom:12px;cursor:pointer;transition:all .15s;-webkit-tap-highlight-color:transparent}
+.type-card:active{opacity:.75;transform:scale(.98)}
+.tc-order{border-color:#7c3aed;background:#faf5ff}
+.tc-stock{border-color:#059669;background:#f0fdf9}
+.tc-icon{font-size:34px;flex-shrink:0}
+.tc-main{font-size:17px;font-weight:700;color:#1c1c1e}
+.tc-sub{font-size:13px;color:#8e8e93;margin-top:3px}
+.tc-time{margin-left:auto;font-size:13px;font-weight:700;padding:5px 12px;border-radius:20px;white-space:nowrap;flex-shrink:0}
+.tc-order .tc-time{background:#7c3aed;color:#fff}
+.tc-stock .tc-time{background:#059669;color:#fff}
+/* 공통 헤더 */
+.top-bar{display:flex;align-items:center;gap:12px;margin-bottom:22px}
+.back-btn{width:40px;height:40px;border-radius:12px;background:#fff;border:1.5px solid #e0e0e0;display:flex;align-items:center;justify-content:center;font-size:20px;color:#636366;cursor:pointer;flex-shrink:0}
+.page-title{font-size:18px;font-weight:700;color:#1c1c1e}
+.page-sub{font-size:13px;color:#8e8e93;margin-top:2px}
+/* 날짜 */
+.date-pill{display:flex;align-items:center;gap:10px;background:#fff;border:1.5px solid #e0e0e0;border-radius:12px;padding:12px 16px;margin-bottom:12px}
+.dp-label{font-size:12px;color:#8e8e93}
+.dp-val{font-size:16px;font-weight:700;color:#1c1c1e}
+.dp-note{font-size:12px;color:#8e8e93;margin-left:auto}
+/* 월요일 경고 배너 */
+.mon-warn{display:none;background:#fef3c7;border:1.5px solid #f59e0b;border-radius:12px;padding:12px 16px;margin-bottom:22px;font-size:13px;color:#92400e;line-height:1.6}
+.mon-warn strong{font-weight:700}
+/* 섹션 */
+.sec-title{font-size:12px;font-weight:700;color:#8e8e93;letter-spacing:.04em;margin:22px 0 10px;padding-bottom:7px;border-bottom:1.5px solid #e0e0e0}
+/* 필드 */
+.field-card{display:flex;align-items:center;justify-content:space-between;padding:16px 18px;border-radius:14px;background:#fff;border:1.5px solid #e0e0e0;margin-bottom:10px;cursor:pointer;transition:border-color .15s}
+.field-card:active{border-color:#7c3aed}
+.stock-card:active{border-color:#059669 !important}
+.fc-label{font-size:16px;font-weight:600;color:#1c1c1e}
+.fc-hint{font-size:12px;color:#8e8e93;margin-top:4px}
+.fc-right{display:flex;align-items:baseline;gap:5px}
+.fc-val{font-size:28px;font-weight:700;color:#1c1c1e;min-width:52px;text-align:right}
+.fc-val.empty{color:#c7c7cc}
+.fc-unit{font-size:14px;color:#8e8e93}
+/* 체크칩 */
+.check-row{display:flex;gap:10px;flex-wrap:wrap}
+.check-chip{padding:10px 18px;border-radius:20px;font-size:15px;font-weight:600;border:1.5px solid #e0e0e0;background:#fff;color:#636366;cursor:pointer;transition:all .15s;user-select:none}
+.check-chip:active{opacity:.7}
+.chip-on-o{background:#ede9fe;border-color:#7c3aed;color:#5b21b6}
+.chip-on-s{background:#d1fae5;border-color:#059669;color:#065f46}
+/* 제출 */
+.submit-btn{width:100%;padding:18px;border-radius:16px;font-size:17px;font-weight:700;border:none;cursor:pointer;margin-top:28px;transition:opacity .15s}
+.submit-btn:active{opacity:.8}
+.sb-o{background:#7c3aed;color:#fff}
+.sb-s{background:#059669;color:#fff}
+/* 다이얼 */
+.dial-ov{display:none;position:fixed;inset:0;background:rgba(0,0,0,.5);z-index:500;align-items:flex-end;justify-content:center}
+.dial-ov.show{display:flex}
+.dial-sheet{background:#fff;border-radius:24px 24px 0 0;padding:20px 16px 40px;width:100%}
+.dial-lbl{font-size:13px;color:#8e8e93;margin-bottom:6px;padding:0 4px}
+.dial-disp{font-size:52px;font-weight:700;text-align:right;padding:8px 8px 14px;border-bottom:1.5px solid #e0e0e0;margin-bottom:14px;min-height:80px;display:flex;align-items:center;justify-content:flex-end;gap:8px}
+.d-num{color:#1c1c1e}
+.d-hint{font-size:18px;color:#c7c7cc;font-weight:400}
+.d-unit{font-size:20px;color:#8e8e93;font-weight:400}
+.dk-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:10px}
+.dk{height:64px;border-radius:14px;background:#f5f5f7;border:none;font-size:24px;font-weight:600;color:#1c1c1e;display:flex;align-items:center;justify-content:center;cursor:pointer;user-select:none;transition:background .08s}
+.dk:active{background:#e0e0e0}
+.dk-sp{background:#e8e8ed;font-size:18px}
+.dk-ok{color:#fff;font-size:17px;font-weight:700;grid-column:1/-1;height:58px;border-radius:16px}
+.dk-ok-o{background:#7c3aed}
+.dk-ok-s{background:#059669}
+/* 완료 */
+.done-wrap{padding:48px 0 24px;text-align:center}
+.done-icon{font-size:64px;margin-bottom:18px}
+.done-title{font-size:22px;font-weight:700;color:#1c1c1e;margin-bottom:8px}
+.done-sub{font-size:15px;color:#636366;line-height:1.6;margin-bottom:24px}
+.msg-preview{text-align:left;background:#f5f5f7;border-radius:14px;padding:16px 18px}
+.mp-label{font-size:12px;color:#8e8e93;margin-bottom:10px}
+.mp-body{font-size:13px;color:#1c1c1e;line-height:2;font-family:'Courier New',monospace;white-space:pre;overflow-x:auto}
+.reset-btn{margin-top:16px;width:100%;padding:16px;border-radius:14px;background:#fff;border:1.5px solid #e0e0e0;font-size:16px;color:#636366;cursor:pointer}
+/* 로딩 */
+.loading-ov{display:none;position:fixed;inset:0;background:rgba(255,255,255,.9);z-index:999;flex-direction:column;align-items:center;justify-content:center;gap:16px}
+.loading-ov.show{display:flex}
+.spinner{width:44px;height:44px;border:4px solid #e0e0e0;border-top-color:#7c3aed;border-radius:50%;animation:spin .8s linear infinite}
+.loading-text{font-size:15px;color:#636366}
+@keyframes spin{to{transform:rotate(360deg)}}
 </style>
 </head>
 <body>
@@ -136,7 +129,12 @@
     <div class="date-pill">
       <span class="dp-label">발주일</span>
       <span class="dp-val" id="date-o"></span>
-      <span class="dp-note">내일 납품분</span>
+      <span class="dp-note" id="order-note">내일 납품분</span>
+    </div>
+    <!-- 월요일 경고 배너 (백석 화요일 휴무) -->
+    <div class="mon-warn" id="mon-warn">
+      ⚠️ <strong>월요일 발주 — 업체 화요일 휴무</strong><br>
+      발주 내용은 저장되며 <strong>화요일 20:00</strong>에 자동 발송됩니다
     </div>
     <div class="sec-title">곱창 재고</div>
     <div class="field-card" onclick="openDial('o-gu','곱창 · 쓰고 있는 것','o',true)">
@@ -218,11 +216,11 @@
 <div class="screen" id="s-done">
   <div class="container">
     <div class="done-wrap">
-      <div class="done-icon">✅</div>
+      <div class="done-icon" id="done-icon">✅</div>
       <div class="done-title" id="done-title"></div>
       <div class="done-sub" id="done-sub"></div>
       <div class="msg-preview">
-        <div class="mp-label">📨 사장님 수신 문자 미리보기</div>
+        <div class="mp-label" id="mp-label">📨 사장님 수신 문자 미리보기</div>
         <div class="mp-body" id="mp-body"></div>
       </div>
       <button class="reset-btn" onclick="goS1()">← 처음으로 돌아가기</button>
@@ -257,7 +255,7 @@
 
 <script>
 // ── 설정: GAS 웹앱 URL ──────────────────────────────
-const GAS_URL = 'https://script.google.com/macros/s/AKfycbw97e3tDmVYUG4_cDiKQrkNuRhWAJFiUrMQuATAzfy0WEAZwhAPdMryzY-Oa8TGJe2-cg/exec';  // 배포 후 교체
+const GAS_URL = 'https://script.google.com/macros/s/AKfycbw97e3tDmVYUG4_cDiKQrkNuRhWAJFiUrMQuATAzfy0WEAZwhAPdMryzY-Oa8TGJe2-cg/exec';
 
 // ── 날짜 ──────────────────────────────────────────────
 const DAYS=['일','월','화','수','목','금','토'];
@@ -266,9 +264,20 @@ function fmtDate(d){
     String(d.getMonth()+1).padStart(2,'0')+'.'+
     String(d.getDate()).padStart(2,'0')+'('+DAYS[d.getDay()]+')';
 }
-const today=new Date();
-document.getElementById('date-o').textContent=fmtDate(today);
-document.getElementById('date-s').textContent=fmtDate(today);
+
+const today = new Date();
+const isMonday = today.getDay() === 1; // 1 = 월요일 (백석 화요일 휴무)
+
+document.getElementById('date-o').textContent = fmtDate(today);
+document.getElementById('date-s').textContent = fmtDate(today);
+
+// 월요일이면 발주 화면에 경고 배너 + 납품 안내 변경
+if(isMonday){
+  document.getElementById('mon-warn').style.display = 'block';
+  const noteEl = document.getElementById('order-note');
+  noteEl.textContent = '수요일 납품분';
+  noteEl.style.color = '#d97706';
+}
 
 // ── 화면 전환 ─────────────────────────────────────────
 function show(id){
@@ -296,6 +305,7 @@ function getChips(rowId){
 
 // ── 다이얼 ────────────────────────────────────────────
 let dTarget=null,dBuf='',dDot=true,dHas=false;
+
 function openDial(id,lbl,t,dot){
   dTarget=document.getElementById(id);dBuf='';dDot=dot;dHas=false;
   document.getElementById('dial-lbl').textContent=lbl;
@@ -307,26 +317,42 @@ function openDial(id,lbl,t,dot){
   ok.className='dk dk-ok '+(t==='o'?'dk-ok-o':'dk-ok-s');
   document.getElementById('dial-ov').classList.add('show');
 }
+
 function renderDisp(){
   const el=document.getElementById('dial-disp');
   el.innerHTML=dHas
     ?`<span class="d-num">${dBuf}</span><span class="d-unit">보</span>`
     :'<span class="d-hint">숫자 입력</span><span class="d-unit">보</span>';
 }
+
+// ── [수정1] 소수점 입력 수정 ──────────────────────────
+// '.' 먼저 누르면 자동으로 '0.'이 되고 이후 숫자 입력 시 '0.8' 등으로 표시
 function dk(k){
   if(k==='.'&&(!dDot||dBuf.includes('.')))return;
-  if(!dHas&&k==='.')dBuf='0';
-  else if(dBuf==='0'&&k!=='.')dBuf=k;
-  else dBuf+=k;
-  if(dBuf.length>5)return;
-  dHas=true;renderDisp();
+  if(!dHas && k==='.'){
+    // '.'을 첫 입력으로 누른 경우 → '0.'으로 시작
+    dBuf='0.';
+  } else if(!dHas){
+    // 일반 숫자 첫 입력
+    dBuf=k;
+  } else if(dBuf==='0' && k!=='.'){
+    // 앞에 0만 있는 상태에서 숫자 입력 → 0 대체
+    dBuf=k;
+  } else {
+    dBuf+=k;
+  }
+  if(dBuf.length>6)return;
+  dHas=true;
+  renderDisp();
 }
+
 function dkDel(){
   if(!dHas)return;
   dBuf=dBuf.slice(0,-1);
   if(dBuf===''||dBuf==='0'){dBuf='';dHas=false;}
   renderDisp();
 }
+
 function dkOk(){
   if(dTarget){
     if(!dHas||dBuf===''){dTarget.textContent='-';dTarget.classList.add('empty');}
@@ -334,6 +360,7 @@ function dkOk(){
   }
   document.getElementById('dial-ov').classList.remove('show');
 }
+
 function dialClose(e){document.getElementById('dial-ov').classList.remove('show');}
 
 // ── 값 읽기 ──────────────────────────────────────────
@@ -341,23 +368,21 @@ function gv(id){const t=document.getElementById(id).textContent.trim();return(t=
 function pad(s,n){s=String(s);while(s.length<n)s=' '+s;return s;}
 function showLoading(v){document.getElementById('loading').classList[v?'add':'remove']('show');}
 
-// ── 로컬 발주량 계산 (미리보기용 — GAS 로직과 동일하게 유지) ───
-// 요일별 목표재고: 일8 월8 화8 수10 목11 금13 토13
+// ── 로컬 발주량 계산 (미리보기용)
 const TARGET_BY_DAY = [3, 3, 3, 3, 4, 4, 4];
 const MIN_ORDER = 1;
 const MAX_ORDER = 2;
-
 function calcOrder(gu, gd, gi) {
-  const total  = gu + gd + gi;
-  const day    = new Date().getDay();
+  const total = gu + gd + gi;
+  const day = new Date().getDay();
   const target = TARGET_BY_DAY[day];
-  const raw    = target - total;
-  const calc   = raw <= 0 ? 0 : Math.round(raw);
-  const order  = Math.min(Math.max(calc, MIN_ORDER), MAX_ORDER);
+  const raw = target - total;
+  const calc = raw <= 0 ? 0 : Math.round(raw);
+  const order = Math.min(Math.max(calc, MIN_ORDER), MAX_ORDER);
   return { gc_order: order, target: target };
 }
 
-// ── 발주 제출 ─────────────────────────────────────────
+// ── [수정2] 발주 제출 (월요일 백석 자동 지연 처리) ────
 function submitOrder(){
   const gu=gv('o-gu'),gd=gv('o-gd'),gi=gv('o-gi');
   const dc=gv('o-dc'),mc=gv('o-mc');
@@ -371,43 +396,67 @@ function submitOrder(){
 
   showLoading(true);
 
-  const payload={type:'order',branch:'baeseok',gc_use:gu,gc_done:gd,gc_ing:gi,dc:dc,mc:mc,extras:extras,date:dateStr};
+  // 월요일이면 monday_delay:true 플래그 추가 → GAS에서 화요일 20:00 발송 처리
+  const payload={
+    type:'order',
+    branch:'baeseok',
+    gc_use:gu, gc_done:gd, gc_ing:gi,
+    dc:dc, mc:mc,
+    extras:extras,
+    date:dateStr,
+    monday_delay: isMonday  // ← 추가
+  };
 
-  // GAS에 전송 (no-cors: 응답 못 읽지만 GAS는 실행됨)
   fetch(GAS_URL,{method:'POST',mode:'no-cors',headers:{'Content-Type':'application/json'},body:JSON.stringify(payload)})
-  .then(()=>{
-    showLoading(false);
-    const r=calcOrder(gu,gd,gi);
-    const total=(gu+gd+gi).toFixed(1);
-    const raw=r.target-(gu+gd+gi);
-    const calcRaw=raw<=0?0:Math.round(raw);
-    const minMaxNote=r.gc_order===MIN_ORDER&&calcRaw<MIN_ORDER
-      ? ` (최소${MIN_ORDER}보 적용)`
-      : r.gc_order===MAX_ORDER&&calcRaw>MAX_ORDER
-      ? ` (최대${MAX_ORDER}보 적용)`
-      : '';
-    let preview=
-      `[발주완료] 백석점\n${dateStr}\n──────────────────\n곱창 재고\n`+
-      `  쓰는것   ${pad(gu,5)} 보\n`+
-      `  연육완료 ${pad(gd,5)} 보\n`+
-      `  연육중   ${pad(gi,5)} 보\n`+
-      `  합계     ${pad(total,5)} 보\n`+
-      `  목표     ${pad(r.target,5)} 보\n`+
-      `──────────────────\n`+
-      `곱창 발주  ${pad(r.gc_order,3)} 보${minMaxNote}\n`;
-    if(dc>0)preview+=`대창 발주  ${pad(dc,3)} 보\n`;
-    if(mc>0)preview+=`막창 발주  ${pad(mc,3)} 보\n`;
-    if(extras.length)preview+=`추가       ${extras.join(' / ')}\n`;
-    preview+=`──────────────────\n업체 문자 발송완료 ✅`;
-    document.getElementById('done-title').textContent='백석점 발주 완료';
-    document.getElementById('done-sub').textContent=dateStr+' 발주가 자동 전송되었습니다';
-    document.getElementById('mp-body').textContent=preview;
-    show('s-done');
-  })
-  .catch(err=>{
-    showLoading(false);
-    alert('전송 오류\n'+err.message);
-  });
+    .then(()=>{
+      showLoading(false);
+      const r=calcOrder(gu,gd,gi);
+      const total=(gu+gd+gi).toFixed(1);
+      const raw=r.target-(gu+gd+gi);
+      const calcRaw=raw<=0?0:Math.round(raw);
+      const minMaxNote=r.gc_order===MIN_ORDER&&calcRaw<MIN_ORDER
+        ? ` (최소${MIN_ORDER}보 적용)`
+        : r.gc_order===MAX_ORDER&&calcRaw>MAX_ORDER
+        ? ` (최대${MAX_ORDER}보 적용)`
+        : '';
+
+      let preview=
+        `[발주완료] 백석점\n${dateStr}\n──────────────────\n곱창 재고\n`+
+        ` 쓰는것 ${pad(gu,5)} 보\n`+
+        ` 연육완료 ${pad(gd,5)} 보\n`+
+        ` 연육중 ${pad(gi,5)} 보\n`+
+        ` 합계 ${pad(total,5)} 보\n`+
+        ` 목표 ${pad(r.target,5)} 보\n`+
+        `──────────────────\n`+
+        `곱창 발주 ${pad(r.gc_order,3)} 보${minMaxNote}\n`;
+
+      if(dc>0)preview+=`대창 발주 ${pad(dc,3)} 보\n`;
+      if(mc>0)preview+=`막창 발주 ${pad(mc,3)} 보\n`;
+      if(extras.length)preview+=`추가 ${extras.join(' / ')}\n`;
+      preview+=`──────────────────\n`;
+
+      if(isMonday){
+        // 월요일: 예약 발송 안내
+        preview+=`화요일 20:00 자동 발송 예약 ⏰`;
+        document.getElementById('done-icon').textContent='⏰';
+        document.getElementById('done-title').textContent='백석점 발주 접수 완료';
+        document.getElementById('done-sub').textContent='업체 화요일 휴무 — 화요일 20:00에 자동 발송됩니다';
+        document.getElementById('mp-label').textContent='📋 발주 내용 (화요일 20:00 발송 예정)';
+      } else {
+        preview+=`업체 문자 발송완료 ✅`;
+        document.getElementById('done-icon').textContent='✅';
+        document.getElementById('done-title').textContent='백석점 발주 완료';
+        document.getElementById('done-sub').textContent=dateStr+' 발주가 자동 전송되었습니다';
+        document.getElementById('mp-label').textContent='📨 사장님 수신 문자 미리보기';
+      }
+
+      document.getElementById('mp-body').textContent=preview;
+      show('s-done');
+    })
+    .catch(err=>{
+      showLoading(false);
+      alert('전송 오류\n'+err.message);
+    });
 }
 
 // ── 입고 제출 ─────────────────────────────────────────
@@ -422,28 +471,30 @@ function submitStock(){
   }
 
   showLoading(true);
-
   const payload={type:'stock',branch:'baeseok',gc:gc,dc:dc,mc:mc,bs:bs,extras:extras,date:dateStr};
 
   fetch(GAS_URL,{method:'POST',mode:'no-cors',headers:{'Content-Type':'application/json'},body:JSON.stringify(payload)})
-  .then(()=>{
-    showLoading(false);
-    let preview=`[입고확인] 백석점\n${dateStr}\n──────────────────\n`+
-      `곱창  ${pad(gc,3)} 보\n`;
-    if(dc>0)preview+=`대창  ${pad(dc,3)} 보\n`;
-    if(mc>0)preview+=`막창  ${pad(mc,3)} 보\n`;
-    if(bs>0)preview+=`박스  ${pad(bs,3)} 개\n`;
-    if(extras.length)preview+=`기타  ${extras.join(' / ')}\n`;
-    preview+=`──────────────────\n입고 확인완료 ✅`;
-    document.getElementById('done-title').textContent='백석점 입고 완료';
-    document.getElementById('done-sub').textContent=dateStr+' 입고 내역이 전송되었습니다';
-    document.getElementById('mp-body').textContent=preview;
-    show('s-done');
-  })
-  .catch(err=>{
-    showLoading(false);
-    alert('전송 오류\n'+err.message);
-  });
+    .then(()=>{
+      showLoading(false);
+      let preview=`[입고확인] 백석점\n${dateStr}\n──────────────────\n`+
+        `곱창 ${pad(gc,3)} 보\n`;
+      if(dc>0)preview+=`대창 ${pad(dc,3)} 보\n`;
+      if(mc>0)preview+=`막창 ${pad(mc,3)} 보\n`;
+      if(bs>0)preview+=`박스 ${pad(bs,3)} 개\n`;
+      if(extras.length)preview+=`기타 ${extras.join(' / ')}\n`;
+      preview+=`──────────────────\n입고 확인완료 ✅`;
+
+      document.getElementById('done-icon').textContent='✅';
+      document.getElementById('done-title').textContent='백석점 입고 완료';
+      document.getElementById('done-sub').textContent=dateStr+' 입고 내역이 전송되었습니다';
+      document.getElementById('mp-label').textContent='📨 사장님 수신 문자 미리보기';
+      document.getElementById('mp-body').textContent=preview;
+      show('s-done');
+    })
+    .catch(err=>{
+      showLoading(false);
+      alert('전송 오류\n'+err.message);
+    });
 }
 </script>
 </body>
