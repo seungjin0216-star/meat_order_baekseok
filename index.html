@@ -81,6 +81,10 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Apple SD Gothic Neo','Malgun 
 .dk-ok{color:#fff;font-size:17px;font-weight:700;grid-column:1/-1;height:58px;border-radius:16px}
 .dk-ok-o{background:#7c3aed}
 .dk-ok-s{background:#059669}
+/* 막창 최대치 */
+.mc-max-btn{display:flex;align-items:center;justify-content:center;gap:8px;padding:12px 18px;border-radius:12px;background:#fff;border:1.5px dashed #d1d1d6;font-size:14px;font-weight:600;color:#8e8e93;cursor:pointer;transition:all .15s;user-select:none;margin-bottom:10px;margin-top:-2px}
+.mc-max-btn:active{opacity:.7}
+.mc-max-on{background:#fee2e2;border:1.5px solid #dc2626;color:#991b1b}
 /* 완료 */
 .done-wrap{padding:48px 0 24px;text-align:center}
 .done-icon{font-size:64px;margin-bottom:18px}
@@ -154,9 +158,12 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Apple SD Gothic Neo','Malgun 
       <div><div class="fc-label">대창</div><div class="fc-hint">발주할 수량 직접 입력</div></div>
       <div class="fc-right"><div class="fc-val empty" id="o-dc">-</div><div class="fc-unit">보</div></div>
     </div>
-    <div class="field-card" onclick="openDial('o-mc','막창 발주량','o',false)">
+    <div class="field-card" onclick="openMcDial()">
       <div><div class="fc-label">막창</div><div class="fc-hint">발주할 수량 직접 입력</div></div>
-      <div class="fc-right"><div class="fc-val empty" id="o-mc">-</div><div class="fc-unit">보</div></div>
+      <div class="fc-right"><div class="fc-val empty" id="o-mc">-</div><div class="fc-unit" id="o-mc-unit">보</div></div>
+    </div>
+    <div class="mc-max-btn" id="mc-max-btn" onclick="toggleMcMax()">
+      📦 최대치 — 업체 가용물량 전량
     </div>
     <div class="sec-title">추가 주문 (해당 항목만 체크)</div>
     <div class="check-row" id="chips-o">
@@ -290,9 +297,15 @@ function goS1(){show('s1');resetAll();}
 function resetAll(){
   ['o-gu','o-gd','o-gi','o-dc','o-mc','s-gc','s-dc','s-mc','s-bs'].forEach(id=>{
     const el=document.getElementById(id);
-    if(el){el.textContent='-';el.classList.add('empty');}
+    if(el){el.textContent='-';el.classList.add('empty');el.style.fontSize='';el.style.color='';}
   });
   document.querySelectorAll('.check-chip').forEach(c=>c.classList.remove('chip-on-o','chip-on-s'));
+  // 막창 최대치 초기화
+  mcMaxActive=false;
+  const btn=document.getElementById('mc-max-btn');
+  if(btn)btn.classList.remove('mc-max-on');
+  const unit=document.getElementById('o-mc-unit');
+  if(unit)unit.textContent='보';
 }
 
 // ── 체크칩 ────────────────────────────────────────────
@@ -301,6 +314,36 @@ function getChips(rowId){
   return Array.from(document.querySelectorAll('#'+rowId+' .check-chip'))
     .filter(c=>c.classList.contains('chip-on-o')||c.classList.contains('chip-on-s'))
     .map(c=>c.textContent.trim());
+}
+
+// ── 막창 최대치 ───────────────────────────────────────
+let mcMaxActive = false;
+
+function toggleMcMax(){
+  mcMaxActive = !mcMaxActive;
+  const btn  = document.getElementById('mc-max-btn');
+  const valEl = document.getElementById('o-mc');
+  const unit  = document.getElementById('o-mc-unit');
+  if(mcMaxActive){
+    btn.classList.add('mc-max-on');
+    valEl.textContent='최대';
+    valEl.classList.remove('empty');
+    valEl.style.fontSize='18px';
+    valEl.style.color='#dc2626';
+    unit.textContent='';
+  } else {
+    btn.classList.remove('mc-max-on');
+    valEl.textContent='-';
+    valEl.classList.add('empty');
+    valEl.style.fontSize='';
+    valEl.style.color='';
+    unit.textContent='보';
+  }
+}
+
+function openMcDial(){
+  if(mcMaxActive) return; // 최대치 선택 중이면 다이얼 열지 않음
+  openDial('o-mc','막창 발주량','o',false);
 }
 
 // ── 다이얼 ────────────────────────────────────────────
@@ -385,7 +428,8 @@ function calcOrder(gu, gd, gi) {
 // ── [수정2] 발주 제출 (월요일 백석 자동 지연 처리) ────
 function submitOrder(){
   const gu=gv('o-gu'),gd=gv('o-gd'),gi=gv('o-gi');
-  const dc=gv('o-dc'),mc=gv('o-mc');
+  const dc=gv('o-dc');
+  const mc=mcMaxActive ? 0 : gv('o-mc'); // 최대치면 숫자 0으로 처리(GAS에서 mc_max로 판단)
   const extras=getChips('chips-o');
   const dateStr=document.getElementById('date-o').textContent;
 
@@ -396,15 +440,15 @@ function submitOrder(){
 
   showLoading(true);
 
-  // 월요일이면 monday_delay:true 플래그 추가 → GAS에서 화요일 20:00 발송 처리
   const payload={
     type:'order',
     branch:'baeseok',
     gc_use:gu, gc_done:gd, gc_ing:gi,
     dc:dc, mc:mc,
+    mc_max: mcMaxActive,   // ← 막창 최대치 플래그
     extras:extras,
     date:dateStr,
-    monday_delay: isMonday  // ← 추가
+    monday_delay: isMonday
   };
 
   fetch(GAS_URL,{method:'POST',mode:'no-cors',headers:{'Content-Type':'application/json'},body:JSON.stringify(payload)})
@@ -431,7 +475,8 @@ function submitOrder(){
         `곱창 발주 ${pad(r.gc_order,3)} 보${minMaxNote}\n`;
 
       if(dc>0)preview+=`대창 발주 ${pad(dc,3)} 보\n`;
-      if(mc>0)preview+=`막창 발주 ${pad(mc,3)} 보\n`;
+      if(mcMaxActive)preview+=`막창 발주  최대치 (가용물량 전량)\n`;
+      else if(mc>0)preview+=`막창 발주 ${pad(mc,3)} 보\n`;
       if(extras.length)preview+=`추가 ${extras.join(' / ')}\n`;
       preview+=`──────────────────\n`;
 
