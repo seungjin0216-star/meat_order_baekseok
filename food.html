@@ -1,0 +1,733 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+<title>백석점 식자재 발주</title>
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="default">
+<meta name="apple-mobile-web-app-title" content="식자재 발주">
+<style>
+*{box-sizing:border-box;margin:0;padding:0;-webkit-tap-highlight-color:transparent}
+html,body{width:100%;overflow-x:hidden}
+body{font-family:-apple-system,BlinkMacSystemFont,'Apple SD Gothic Neo','Malgun Gothic',sans-serif;background:#f5f5f7;min-height:100vh}
+.screen{display:none}.screen.active{display:block}
+.container{width:100%;max-width:500px;margin:0 auto;padding:20px 16px 100px}
+
+/* 헤더 */
+.brand{font-size:22px;font-weight:700;color:#1c1c1e;margin-bottom:4px}
+.brand-loc{display:inline-flex;align-items:center;gap:6px;background:#ede9fe;color:#5b21b6;font-size:13px;font-weight:600;padding:4px 12px;border-radius:20px;margin-bottom:20px}
+
+/* 날짜 필 */
+.date-pill{display:flex;align-items:center;gap:10px;background:#fff;border:1.5px solid #e0e0e0;border-radius:12px;padding:12px 16px;margin-bottom:14px}
+.dp-label{font-size:12px;color:#8e8e93}
+.dp-val{font-size:16px;font-weight:700;color:#1c1c1e}
+.dp-note{font-size:12px;color:#8e8e93;margin-left:auto}
+
+/* 지연 배너 (월/화) */
+.delay-banner{display:none;background:#fef3c7;border:1.5px solid #f59e0b;border-radius:12px;padding:12px 16px;margin-bottom:18px;font-size:13px;color:#92400e;line-height:1.6}
+.delay-banner strong{font-weight:700}
+
+/* 섹션 */
+.sec-header{display:flex;align-items:center;justify-content:space-between;padding:10px 4px 8px;margin-top:18px;border-bottom:1.5px solid #e0e0e0;margin-bottom:10px}
+.sec-left{display:flex;align-items:center;gap:8px}
+.sec-right{display:flex;align-items:center;gap:8px}
+.sec-title{font-size:13px;font-weight:700;color:#8e8e93;letter-spacing:.04em}
+.sec-badge{font-size:11px;font-weight:700;padding:3px 9px;border-radius:10px;background:#ede9fe;color:#7c3aed;display:none}
+.sec-badge.show{display:inline-block}
+.sec-phone{font-size:11px;color:#c7c7cc;font-weight:500}
+.sec-all-btn{font-size:11px;font-weight:600;padding:4px 10px;border-radius:10px;border:1px solid #e0e0e0;background:#fff;color:#8e8e93;cursor:pointer}
+.sec-all-btn:active{background:#f0e6ff;color:#7c3aed;border-color:#c4b5fd}
+
+/* 아이템 그리드 */
+.item-grid{display:flex;flex-wrap:wrap;gap:8px;margin-bottom:4px}
+
+/* 아이템 칩 */
+.item-chip{display:flex;align-items:center;gap:5px;padding:9px 13px;border-radius:22px;border:1.5px solid #e0e0e0;background:#fff;cursor:pointer;transition:all .1s;user-select:none}
+.item-chip:active{transform:scale(.93)}
+.ic-name{font-size:14px;font-weight:600;color:#636366}
+.ic-qty{font-size:12px;font-weight:700;background:#7c3aed;color:#fff;padding:2px 7px;border-radius:10px;display:none}
+/* 선택된 칩 */
+.item-chip.on{background:#f3e8ff;border-color:#7c3aed}
+.item-chip.on .ic-name{color:#5b21b6}
+.item-chip.on .ic-qty{display:inline-block}
+
+/* 바텀 바 */
+.bottom-bar{position:fixed;bottom:0;left:0;right:0;background:#fff;border-top:1px solid #e0e0e0;padding:12px 16px 28px;z-index:100}
+.bb-inner{max-width:500px;margin:0 auto;display:flex;align-items:center;gap:12px}
+.bb-info{flex:1;min-width:0}
+.bb-count{font-size:15px;font-weight:700;color:#1c1c1e}
+.bb-sub{font-size:12px;color:#8e8e93;margin-top:2px}
+.bb-btn{padding:13px 24px;border-radius:14px;background:#7c3aed;color:#fff;font-size:16px;font-weight:700;border:none;cursor:pointer;white-space:nowrap;flex-shrink:0}
+.bb-btn:active{opacity:.8}
+.bb-btn:disabled{background:#c7c7cc;cursor:not-allowed}
+
+/* ── 수량 다이얼 오버레이 ── */
+.dial-ov{display:none;position:fixed;inset:0;background:rgba(0,0,0,.55);z-index:600;align-items:flex-end;justify-content:center}
+.dial-ov.show{display:flex}
+.dial-sheet{background:#fff;border-radius:24px 24px 0 0;padding:20px 16px 32px;width:100%;max-width:500px}
+.ds-handle{width:40px;height:4px;background:#e0e0e0;border-radius:2px;margin:0 auto 16px}
+.ds-item{font-size:13px;font-weight:700;color:#8e8e93;text-align:center;margin-bottom:4px;letter-spacing:.04em}
+/* 수량 디스플레이 */
+.ds-disp{font-size:56px;font-weight:700;text-align:right;padding:8px 12px 14px;border-bottom:1.5px solid #e0e0e0;margin-bottom:14px;min-height:82px;display:flex;align-items:center;justify-content:flex-end;color:#1c1c1e}
+.ds-disp.empty{color:#c7c7cc}
+/* 키패드 */
+.dk-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:10px;margin-bottom:12px}
+.dk{height:60px;border-radius:14px;background:#f5f5f7;border:none;font-size:24px;font-weight:600;color:#1c1c1e;display:flex;align-items:center;justify-content:center;cursor:pointer;user-select:none;transition:background .08s}
+.dk:active{background:#ddd}
+.dk-bs{font-size:20px;background:#e8e8ed}
+.dk-blank{background:transparent;pointer-events:none}
+/* 액션 버튼 */
+.ds-actions{display:grid;grid-template-columns:1fr 2fr;gap:10px}
+.ds-cancel{padding:16px;border-radius:14px;background:#f5f5f7;border:1.5px solid #e0e0e0;font-size:16px;font-weight:700;color:#636366;cursor:pointer}
+.ds-confirm{padding:16px;border-radius:14px;background:#7c3aed;border:none;font-size:16px;font-weight:700;color:#fff;cursor:pointer}
+.ds-cancel:active{opacity:.7}
+.ds-confirm:active{opacity:.8}
+
+/* ── 미리보기 화면 ── */
+.top-bar{display:flex;align-items:center;gap:12px;margin-bottom:20px}
+.back-btn{width:40px;height:40px;border-radius:12px;background:#fff;border:1.5px solid #e0e0e0;display:flex;align-items:center;justify-content:center;font-size:20px;color:#636366;cursor:pointer;flex-shrink:0}
+.page-title{font-size:18px;font-weight:700;color:#1c1c1e}
+.page-sub{font-size:13px;color:#8e8e93;margin-top:2px}
+
+/* 지연 알림 (미리보기) */
+.preview-delay-notice{background:#fef3c7;border:1.5px solid #f59e0b;border-radius:12px;padding:12px 16px;margin-bottom:14px;font-size:13px;color:#92400e;line-height:1.6;display:none}
+
+.preview-card{background:#fff;border-radius:16px;border:1.5px solid #e0e0e0;margin-bottom:12px;overflow:hidden}
+.pc-header{display:flex;align-items:center;justify-content:space-between;padding:13px 16px;border-bottom:1px solid #f0f0f0}
+.pc-supplier{font-size:15px;font-weight:700;color:#1c1c1e}
+.pc-badge{font-size:11px;font-weight:700;padding:3px 9px;border-radius:10px}
+.badge-sms{background:#d1fae5;color:#065f46}
+.badge-lms{background:#fef3c7;color:#92400e}
+.badge-kakao{background:#ede9fe;color:#5b21b6}
+.pc-msg{padding:14px 16px;font-size:13px;color:#1c1c1e;line-height:1.9;font-family:'Courier New',monospace;white-space:pre-wrap;background:#f9f9f9}
+.pc-footer{padding:9px 16px;display:flex;align-items:center;justify-content:space-between}
+.pc-len{font-size:11px;color:#8e8e93}
+.pc-to{font-size:11px;color:#c7c7cc}
+.submit-btn{width:100%;padding:18px;border-radius:16px;font-size:17px;font-weight:700;border:none;cursor:pointer;margin-top:8px;background:#7c3aed;color:#fff}
+.submit-btn:active{opacity:.8}
+
+/* ── 완료 화면 ── */
+.done-wrap{padding:52px 0 24px;text-align:center}
+.done-icon{font-size:64px;margin-bottom:16px}
+.done-title{font-size:22px;font-weight:700;color:#1c1c1e;margin-bottom:8px}
+.done-sub{font-size:14px;color:#636366;line-height:1.8;margin-bottom:24px;white-space:pre-line}
+.done-result{text-align:left;background:#f5f5f7;border-radius:14px;padding:16px}
+.dr-row{display:flex;align-items:center;justify-content:space-between;padding:7px 0;border-bottom:1px solid #e0e0e0;font-size:13px}
+.dr-row:last-child{border:none}
+.dr-supplier{font-weight:600;color:#1c1c1e}
+.dr-status{font-size:12px;font-weight:600;padding:3px 8px;border-radius:8px}
+.st-sms{background:#d1fae5;color:#065f46}
+.st-lms{background:#fef3c7;color:#92400e}
+.st-kakao{background:#ede9fe;color:#5b21b6}
+.st-dev{background:#e8e8ed;color:#636366}
+.reset-btn{margin-top:18px;width:100%;padding:16px;border-radius:14px;background:#fff;border:1.5px solid #e0e0e0;font-size:16px;color:#636366;cursor:pointer;font-weight:600}
+
+/* 로딩 */
+.loading-ov{display:none;position:fixed;inset:0;background:rgba(255,255,255,.92);z-index:999;flex-direction:column;align-items:center;justify-content:center;gap:16px}
+.loading-ov.show{display:flex}
+.spinner{width:44px;height:44px;border:4px solid #e0e0e0;border-top-color:#7c3aed;border-radius:50%;animation:spin .8s linear infinite}
+.loading-text{font-size:15px;color:#636366}
+@keyframes spin{to{transform:rotate(360deg)}}
+</style>
+</head>
+<body>
+
+<!-- ═══════════════════════════════════ -->
+<!--  S1: 아이템 선택                    -->
+<!-- ═══════════════════════════════════ -->
+<div class="screen active" id="s-main">
+  <div class="container">
+    <div class="brand">🥬 식자재 발주</div>
+    <div class="brand-loc">🟢 백석점</div>
+
+    <div class="date-pill">
+      <span class="dp-label">발주일</span>
+      <span class="dp-val" id="date-main"></span>
+      <span class="dp-note" id="date-note"></span>
+    </div>
+
+    <!-- 월/화 지연 배너 -->
+    <div class="delay-banner" id="delay-banner">
+      ⚠️ <strong>월·화 발주 — 화요일 저녁 자동 발송</strong><br>
+      백석 화요일 휴무로 업체 발송은 <strong>화요일 20:30</strong>에 자동 전송됩니다 (수요일 납품)
+    </div>
+
+    <!-- 미락 -->
+    <div class="sec-header">
+      <div class="sec-left">
+        <span class="sec-title">🏪 미락</span>
+        <span class="sec-badge" id="badge-미락"></span>
+      </div>
+      <div class="sec-right">
+        <span class="sec-phone" id="phone-미락"></span>
+      </div>
+    </div>
+    <div class="item-grid" id="grid-미락"></div>
+
+    <!-- 콩나물 -->
+    <div class="sec-header">
+      <div class="sec-left">
+        <span class="sec-title">🌱 콩나물</span>
+        <span class="sec-badge" id="badge-콩나물"></span>
+      </div>
+      <div class="sec-right">
+        <span class="sec-phone" id="phone-콩나물"></span>
+      </div>
+    </div>
+    <div class="item-grid" id="grid-콩나물"></div>
+
+    <!-- 원당 -->
+    <div class="sec-header">
+      <div class="sec-left">
+        <span class="sec-title">🧂 원당</spam>
+        <span class="sec-badge" id="badge-원당"></span>
+      </div>
+      <div class="sec-right">
+        <span class="sec-phone" id="phone-원당"></span>
+        <button class="sec-all-btn" onclick="toggleAll('원당')">전체</button>
+      </div>
+    </div>
+    <div class="item-grid" id="grid-원당"></div>
+
+    <!-- 네이버 -->
+    <div class="sec-header">
+      <div class="sec-left">
+        <span class="sec-title">🛒 네이버</span>
+        <span class="sec-badge" id="badge-네이버"></span>
+      </div>
+      <div class="sec-right">
+        <span class="sec-phone" id="phone-네이버"></span>
+        <button class="sec-all-btn" onclick="toggleAll('네이버')">전체</button>
+      </div>
+    </div>
+    <div class="item-grid" id="grid-네이버"></div>
+
+    <!-- 사장님 -->
+    <div class="sec-header">
+      <div class="sec-left">
+        <span class="sec-title">👤 사장님</span>
+        <span class="sec-badge" id="badge-사장님"></span>
+      </div>
+      <div class="sec-right">
+        <span class="sec-phone" id="phone-사장님"></span>
+        <button class="sec-all-btn" onclick="toggleAll('사장님')">전체</button>
+      </div>
+    </div>
+    <div class="item-grid" id="grid-사장님"></div>
+
+    <!-- 배달관련 -->
+    <div class="sec-header">
+      <div class="sec-left">
+        <span class="sec-title">🛵 배달관련</span>
+        <span class="sec-badge" id="badge-배달관련"></span>
+      </div>
+      <div class="sec-right">
+        <span class="sec-phone" id="phone-배달관련"></span>
+        <button class="sec-all-btn" onclick="toggleAll('배달관련')">전체</button>
+      </div>
+    </div>
+    <div class="item-grid" id="grid-배달관련"></div>
+  </div>
+
+  <div class="bottom-bar">
+    <div class="bb-inner">
+      <div class="bb-info">
+        <div class="bb-count" id="bb-count">선택된 항목 없음</div>
+        <div class="bb-sub" id="bb-sub">항목을 탭하면 수량 입력</div>
+      </div>
+      <button class="bb-btn" id="bb-btn" onclick="goPreview()" disabled>미리보기 →</button>
+    </div>
+  </div>
+</div>
+
+<!-- ═══════════════════════════════════ -->
+<!--  S2: 미리보기                        -->
+<!-- ═══════════════════════════════════ -->
+<div class="screen" id="s-preview">
+  <div class="container">
+    <div class="top-bar">
+      <div class="back-btn" onclick="showScreen('s-main')">←</div>
+      <div>
+        <div class="page-title">📤 발주 미리보기</div>
+        <div class="page-sub">🟢 백석점 · 발송 전 확인</div>
+      </div>
+    </div>
+    <div class="preview-delay-notice" id="preview-delay-notice">
+      🕗 <strong>화요일 20:30 자동 발송</strong> — 지금은 저장만 됩니다
+    </div>
+    <div id="preview-cards"></div>
+    <button class="submit-btn" id="submit-btn" onclick="submitAll()">📨 전체 발송하기</button>
+  </div>
+</div>
+
+<!-- ═══════════════════════════════════ -->
+<!--  S3: 완료                           -->
+<!-- ═══════════════════════════════════ -->
+<div class="screen" id="s-done">
+  <div class="container">
+    <div class="done-wrap">
+      <div class="done-icon" id="done-icon">✅</div>
+      <div class="done-title" id="done-title">발주 완료!</div>
+      <div class="done-sub" id="done-sub"></div>
+      <div class="done-result" id="done-result"></div>
+      <button class="reset-btn" onclick="reset()">🔄 새 발주 시작</button>
+    </div>
+  </div>
+</div>
+
+<!-- ═══════════════════════════════════ -->
+<!--  수량 다이얼                         -->
+<!-- ═══════════════════════════════════ -->
+<div class="dial-ov" id="dial-ov">
+  <div class="dial-sheet">
+    <div class="ds-handle"></div>
+    <div class="ds-item" id="ds-item-name">—</div>
+    <div class="ds-disp empty" id="ds-disp">–</div>
+    <div class="dk-grid">
+      <div class="dk" onclick="dkPress('1')">1</div>
+      <div class="dk" onclick="dkPress('2')">2</div>
+      <div class="dk" onclick="dkPress('3')">3</div>
+      <div class="dk" onclick="dkPress('4')">4</div>
+      <div class="dk" onclick="dkPress('5')">5</div>
+      <div class="dk" onclick="dkPress('6')">6</div>
+      <div class="dk" onclick="dkPress('7')">7</div>
+      <div class="dk" onclick="dkPress('8')">8</div>
+      <div class="dk" onclick="dkPress('9')">9</div>
+      <div class="dk dk-blank"></div>
+      <div class="dk" onclick="dkPress('0')">0</div>
+      <div class="dk dk-bs" onclick="dkPress('⌫')">⌫</div>
+    </div>
+    <div class="ds-actions">
+      <button class="ds-cancel" onclick="dialCancel()">취소</button>
+      <button class="ds-confirm" onclick="dialConfirm()">확인</button>
+    </div>
+  </div>
+</div>
+
+<!-- 로딩 -->
+<div class="loading-ov" id="loading-ov">
+  <div class="spinner"></div>
+  <div class="loading-text" id="loading-text">발송 중...</div>
+</div>
+
+<script>
+// ═══════════════════════════════════════════════════
+// 설정 (업체 전화번호는 실제 번호로 교체)
+// ═══════════════════════════════════════════════════
+const CFG = {
+  GAS_URL: 'https://script.google.com/macros/s/AKfycbw97e3tDmVYUG4_cDiKQrkNuRhWAJFiUrMQuATAzfy0WEAZwhAPdMryzY-Oa8TGJe2-cg/exec',
+  SENDER: '01041216995',
+  SMS_MAX_BYTES: 90,
+  LMS_MAX_BYTES: 2000,
+  PHONES: {
+    '미락'    : '',
+    '콩나물'  : '',
+    '원당'    : '',
+    '네이버'  : '',
+    '사장님'  : '',
+    '배달관련': '',
+  }
+};
+
+// ═══════════════════════════════════════════════════
+// 발주표 데이터
+// ═══════════════════════════════════════════════════
+const SUPS = [
+  { key:'미락',     emoji:'🏪', qty:true,  items:['부추','양파','김가루','배추','라면','김치','날치알','고추가루','우동사리','후리가께','메밀면','대파','고추','마늘','설탕','간장','식초'] },
+  { key:'콩나물',   emoji:'🌱', qty:true,  items:['콩나물'] },
+  { key:'원당',     emoji:'🧂', qty:false, items:['깍두기','굵은소금','꽃소금'] },
+  { key:'네이버',   emoji:'🛒', qty:false, items:['떡','식빵','다시다','들기름','과일','매실액','식용유','쌀','미나리','국간장','멸치액젓','베트남고추','오미자','토닉워터','레몬','세제','롤휴지','연육비닐','지퍼백','생강','새우젓','미원','후추','된장','쌈장','물티슈','라면사리','단무지','두루마리'] },
+  { key:'사장님',   emoji:'👤', qty:false, items:['국수소스','파장소스','묵은지','식세기세제','감미','다대기','파랑봉지','흰봉지','부추봉지'] },
+  { key:'배달관련', emoji:'🛵', qty:false, items:['배달봉투','사각용기 소','사각용기 중','반찬용기','기름장용기','전골용기','수저'] },
+];
+
+// ═══════════════════════════════════════════════════
+// 상태
+// ═══════════════════════════════════════════════════
+// state[key] = { on: bool, qty: string }
+const ST = {};
+
+// 다이얼 상태
+let dKey  = null;   // 현재 편집 중인 아이템 key
+let dBuf  = '';     // 입력 중인 숫자 문자열
+
+// ═══════════════════════════════════════════════════
+// 초기화
+// ═══════════════════════════════════════════════════
+function init() {
+  initDate();
+  SUPS.forEach(sup => {
+    const grid = document.getElementById('grid-' + sup.key);
+    const phoneEl = document.getElementById('phone-' + sup.key);
+    if (phoneEl) phoneEl.textContent = CFG.PHONES[sup.key] || '';
+    sup.items.forEach(item => {
+      const key = sup.key + ':' + item;
+      ST[key] = { on: false, qty: '' };
+      const chip = document.createElement('div');
+      chip.className = 'item-chip';
+      chip.id = 'chip-' + key;
+      chip.innerHTML =
+        `<span class="ic-name">${item}</span>` +
+        `<span class="ic-qty" id="qty-${key}"></span>`;
+      if (sup.qty) {
+        chip.addEventListener('click', () => openDial(key, item));
+      } else {
+        chip.addEventListener('click', () => toggleChip(key, sup.key));
+      }
+      grid.appendChild(chip);
+    });
+  });
+  updateBar();
+}
+
+// ─── 날짜 & 지연 감지 ───────────────────────────
+function isDelayed() {
+  const d = new Date().getDay(); // 1=월, 2=화
+  return d === 1 || d === 2;
+}
+
+function initDate() {
+  const now = new Date();
+  const DAY = ['일','월','화','수','목','금','토'];
+  const m = now.getMonth()+1, d = now.getDate(), w = DAY[now.getDay()];
+  document.getElementById('date-main').textContent = `${m}월 ${d}일 (${w})`;
+
+  if (isDelayed()) {
+    document.getElementById('delay-banner').style.display = 'block';
+    // 수요일 계산
+    const daysToWed = now.getDay() === 1 ? 2 : 1;
+    const wed = new Date(now); wed.setDate(d + daysToWed);
+    document.getElementById('date-note').textContent =
+      `납품: ${wed.getMonth()+1}/${wed.getDate()}(수)`;
+  } else {
+    const tmr = new Date(now); tmr.setDate(d + 1);
+    document.getElementById('date-note').textContent =
+      `납품: ${tmr.getMonth()+1}/${tmr.getDate()}(${DAY[tmr.getDay()]})`;
+  }
+}
+
+// ═══════════════════════════════════════════════════
+// 체크 토글 (수량 불필요 업체 — 1탭 선택, 2탭 해제)
+// ═══════════════════════════════════════════════════
+function toggleChip(key, supKey) {
+  ST[key].on = !ST[key].on;
+  ST[key].qty = '';
+  updateChip(key);
+  updateBadge(supKey);
+  updateBar();
+}
+
+// ═══════════════════════════════════════════════════
+// 다이얼 열기 / 키 입력 / 닫기
+// ═══════════════════════════════════════════════════
+function openDial(key, itemName) {
+  dKey = key;
+  dBuf = ST[key].qty || '';
+  document.getElementById('ds-item-name').textContent = itemName;
+  renderDial();
+  document.getElementById('dial-ov').classList.add('show');
+}
+
+function renderDial() {
+  const el = document.getElementById('ds-disp');
+  if (dBuf === '') {
+    el.textContent = '–';
+    el.classList.add('empty');
+  } else {
+    el.textContent = dBuf;
+    el.classList.remove('empty');
+  }
+}
+
+function dkPress(k) {
+  if (k === '⌫') {
+    dBuf = dBuf.slice(0, -1);
+  } else {
+    if (dBuf.length >= 4) return;
+    // 앞자리 0 방지
+    if (dBuf === '0') dBuf = k;
+    else dBuf += k;
+  }
+  renderDial();
+}
+
+// 취소 → 선택 해제 + 닫기
+function dialCancel() {
+  if (dKey) {
+    const supKey = dKey.split(':')[0];
+    ST[dKey].on  = false;
+    ST[dKey].qty = '';
+    updateChip(dKey);
+    updateBadge(supKey);
+    updateBar();
+  }
+  closeDial();
+}
+
+// 확인 → 선택 + 닫기
+function dialConfirm() {
+  if (dKey) {
+    const supKey = dKey.split(':')[0];
+    ST[dKey].on  = true;
+    ST[dKey].qty = dBuf.trim();
+    updateChip(dKey);
+    updateBadge(supKey);
+    updateBar();
+  }
+  closeDial();
+}
+
+function closeDial() {
+  document.getElementById('dial-ov').classList.remove('show');
+  dKey = null;
+  dBuf = '';
+}
+
+// 배경 탭 → 취소와 동일
+document.getElementById('dial-ov').addEventListener('click', e => {
+  if (e.target === document.getElementById('dial-ov')) dialCancel();
+});
+
+// ═══════════════════════════════════════════════════
+// 전체 선택 토글 (수량 없이 check only)
+// ═══════════════════════════════════════════════════
+function toggleAll(supKey) {
+  const sup = SUPS.find(s => s.key === supKey);
+  const allOn = sup.items.every(item => ST[supKey+':'+item].on);
+  sup.items.forEach(item => {
+    const key = supKey+':'+item;
+    ST[key].on = !allOn;
+    if (allOn) ST[key].qty = '';
+    updateChip(key);
+  });
+  updateBadge(supKey);
+  updateBar();
+}
+
+// ═══════════════════════════════════════════════════
+// 칩 / 배지 / 바텀바 업데이트
+// ═══════════════════════════════════════════════════
+function updateChip(key) {
+  const s = ST[key];
+  const chip = document.getElementById('chip-' + key);
+  const qEl  = document.getElementById('qty-'  + key);
+  chip.classList.toggle('on', s.on);
+  if (s.on && s.qty) {
+    qEl.textContent = s.qty;
+    qEl.style.display = 'inline-block';
+  } else {
+    qEl.style.display = 'none';
+  }
+}
+
+function updateBadge(supKey) {
+  const sup = SUPS.find(s => s.key === supKey);
+  const cnt = sup.items.filter(i => ST[supKey+':'+i].on).length;
+  const el  = document.getElementById('badge-' + supKey);
+  el.textContent = cnt;
+  el.classList.toggle('show', cnt > 0);
+}
+
+function updateBar() {
+  let total = 0; const sups = new Set();
+  SUPS.forEach(sup => sup.items.forEach(item => {
+    if (ST[sup.key+':'+item].on) { total++; sups.add(sup.key); }
+  }));
+  const btn = document.getElementById('bb-btn');
+  if (total === 0) {
+    document.getElementById('bb-count').textContent = '선택된 항목 없음';
+    document.getElementById('bb-sub').textContent   = '항목을 탭하면 수량 입력';
+    btn.disabled = true;
+  } else {
+    document.getElementById('bb-count').textContent = `${total}개 항목 선택됨`;
+    document.getElementById('bb-sub').textContent   = `${sups.size|개 업체 발주 예정`;
+    btn.disabled = false;
+  }
+}
+
+// ═══════════════════════════════════════════════════
+// 메시지 생성
+// ═══════════════════════════════════════════════════
+function buildMsgs() {
+  const now = new Date();
+  const DAY = ['일','월','화','수','목','금','토'];
+  const delayed = isDelayed();
+
+  // 납품일 계산
+  let delivDate;
+  if (delayed) {
+    const toWed = now.getDay() === 1 ? 2 : 1;
+    delivDate = new Date(now); delivDate.setDate(now.getDate() + toWed);
+  } else {
+    delivDate = new Date(now); delivDate.setDate(now.getDate() + 1);
+  }
+  const dateStr = `${delivDate.getMonth()+1}/${delivDate.getDate()}(${DAY[delivDate.getDay()]})`;
+
+  return SUPS.flatMap(sup => {
+    const sel = sup.items.filter(item => ST[sup.key+':'+item].on);
+    if (!sel.length) return [];
+
+    const itemStr = sel.map(item => {
+      const qty = ST[sup.key+':'+item].qty;
+      return qty ? `${item} ${qty}` : item;
+    }).join(', ');
+
+    const body = `[백석점 발주 ${dateStr}]\n${itemStr}`;
+    const bytes = byteLen(body);
+    const channel = bytes <= CFG.SMS_MAX_BYTES ? 'SMS'
+                  : bytes <= CFG.LMS_MAX_BYTES ? 'LMS' : 'KAKAO';
+
+    return [{ supplier:sup.key, emoji:sup.emoji,
+               phone: CFG.PHONES[sup.key]||'',
+               body, bytes, channel, items:sel, delayed }];
+  });
+}
+
+function byteLen(str) {
+  let n = 0;
+  for (let i = 0; i < str.length; i++) {
+    const c = str.charCodeAt(i);
+    n += c <= 0x7F ? 1 : c <= 0x7FF ? 2 : 3;
+  }
+  return n;
+}
+
+// ═══════════════════════════════════════════════════
+// 미리보기 화면
+// ═══════════════════════════════════════════════════
+function goPreview() {
+  const msgs = buildMsgs();
+  if (!msgs.length) return;
+
+  const delayed = msgs.some(m => m.delayed);
+  const notice = document.getElementById('preview-delay-notice');
+  notice.style.display = delayed ? 'block' : 'none';
+
+  const submitBtn = document.getElementById('submit-btn');
+  submitBtn.textContent = delayed ? '📋 발주 저장 (화요일 20:30 자동발송)' : '📨 전체 발송하기';
+
+  const cards = document.getElementById('preview-cards');
+  cards.innerHTML = '';
+  msgs.forEach(m => {
+    const bClass = m.channel==='SMS' ? 'badge-sms' : m.channel==='LMS' ? 'badge-lms' : 'badge-kakao';
+    const bLabel = m.channel==='SMS' ? '📱 SMS (9원)' : m.channel==='LMS' ? '📄 LMS (27원)' : '💬 카카오';
+    const card = document.createElement('div');
+    card.className = 'preview-card';
+    card.innerHTML = `
+      <div class="pc-header">
+        <span class="pc-supplier">${m.emoji} ${m.supplier}</span>
+        <span class="pc-badge ${bClass}">${bLabel}</span>
+      </div>
+      <div class="pc-msg">${esc(m.body)}</div>
+      <div class="pc-footer">
+        <span class="pc-len">${m.bytes}B · ${m.items.length}개</span>
+        <span class="pc-to">${m.phone}</span>
+      </div>`;
+    cards.appendChild(card);
+  });
+
+  showScreen('s-preview');
+}
+
+function esc(s) {
+  return s.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+}
+
+// ═══════════════════════════════════════════════════
+// 발송
+// ═══════════════════════════════════════════════════
+async function submitAll() {
+  const msgs = buildMsgs();
+  const delayed = msgs.some(m => m.delayed);
+
+  if (!CFG.GAS_URL) {
+    // 개발 모드
+    showDone(msgs, true);
+    return;
+  }
+
+  showLoading(delayed ? '발주 저장 중...' : '문자 발송 중...');
+  try {
+    const res = await fetch(CFG.GAS_URL, {
+      method: 'POST',
+      headers: {'Content-Type':'application/json'},
+      body: JSON.stringify({
+        type: 'food_order',
+        branch: 'baekseok',
+        delay_to_tuesday: delayed,
+        messages: msgs.map(m => ({
+          supplier: m.supplier,
+          phone: m.phone,
+          body: m.body,
+          channel: m.channel
+        }))
+      })
+    });
+    const data = await res.json();
+    hideLoading();
+    showDone(msgs, false, data);
+  } catch(e) {
+    hideLoading();
+    alert('오류: ' + e.message);
+  }
+}
+
+function showDone(msgs, dev) {
+  const delayed = msgs.some(m => m.delayed);
+  document.getElementById('done-icon').textContent = dev ? '📋' : (delayed ? '🕗' : '✅');
+  document.getElementById('done-title').textContent = dev ? '미리보기 완료' : (delayed ? '저장 완료!' : '발송 완료!');
+  document.getElementById('done-sub').textContent = dev
+    ? '⚠️ 개발 모드 (GAS URL 미설정)\n실제 발송은 GAS URL 설정 후 가능합니다'
+    : delayed
+      ? `화요일 20:30에 ${msgs.length}개 업체로 자동 발송됩니다`
+      : `${msgs.length}개 업체에 발주 완료`;
+
+  document.getElementById('done-result').innerHTML = msgs.map(m => {
+    const cls = dev ? 'st-dev' : (m.channel==='SMS'?'st-sms':m.channel==='LMS'?'st-lms':'st-kakao');
+    const lbl = dev ? '미리보기' : (delayed ? '예약됨' : m.channel);
+    return `<div class="dr-row">
+      <span class="dr-supplier">${m.emoji} ${m.supplier}</span>
+      <span class="dr-status ${cls}">${lbl}</span>
+    </div>`;
+  }).join('');
+
+  showScreen('s-done');
+}
+
+// ═══════════════════════════════════════════════════
+// 유틸
+// ═══════════════════════════════════════════════════
+function showScreen(id) {
+  document.querySelectorAll('.screen').forEach(s => s.classList.remove('active'));
+  document.getElementById(id).classList.add('active');
+  window.scrollTo(0, 0);
+}
+function showLoading(t) {
+  document.getElementById('loading-text').textContent = t;
+  document.getElementById('loading-ov').classList.add('show');
+}
+function hideLoading() {
+  document.getElementById('loading-ov').classList.remove('show');
+}
+
+function reset() {
+  SUPS.forEach(sup => {
+    sup.items.forEach(item => {
+      const key = sup.key+':'+item;
+      ST[key] = { on: false, qty: '' };
+      updateChip(key);
+    });
+    updateBadge(sup.key);
+  });
+  updateBar();
+  showScreen('s-main');
+}
+
+// ═══════════════════════════════════════════════════
+// 시작
+// ═══════════════════════════════════════════════════
+init();
+</script>
+</body>
+</html>
