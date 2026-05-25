@@ -150,7 +150,8 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Apple SD Gothic Neo','Malgun 
     <!-- 월/화 지연 배너 -->
     <div class="delay-banner" id="delay-banner">
       ⚠️ <strong>월·화 발주 — 화요일 저녁 자동 발송</strong><br>
-      백석 화요일 휴무로 업체 발송은 <strong>화요일 20:30</strong>에 자동 전송됩니다 (수요일 낙품)<br>      <span style="font-size:12px;opacity:0.8">※ 월요일 18시 이전 발주는 즉시 전송됩니다</span>
+      백석 화요일 휴무로 업체 발송은 <strong>화요일 20:30</strong>에 자동 전송됩니다 (수요일 납품)<br>
+      <span style="font-size:12px;opacity:0.8">※ 월요일 18시 이전 발주는 즉시 전송됩니다</span>
     </div>
 
     <!-- 미락 -->
@@ -180,7 +181,7 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Apple SD Gothic Neo','Malgun 
     <!-- 원당 -->
     <div class="sec-header">
       <div class="sec-left">
-        <span class="sec-title">🧂 원당</spam>
+        <span class="sec-title">🧂 원당</span>
         <span class="sec-badge" id="badge-원당"></span>
       </div>
       <div class="sec-right">
@@ -383,8 +384,12 @@ function init() {
 
 // ─── 날짜 & 지연 감지 ───────────────────────────
 function isDelayed() {
-  const now = new Date(); const d = now.getDay(); // 1=월, 2=화
-  const h = now.getHours(); if (d === 2) return true; if (d === 1 && h >= 18) return true; return false;
+  const now = new Date();
+  const d = now.getDay();   // 1=월, 2=화
+  const h = now.getHours(); // 0~23
+  if (d === 2) return true;          // 화요일 → 항상 지연
+  if (d === 1 && h >= 18) return true; // 월요일 18시 이후 → 지연
+  return false;
 }
 
 function initDate() {
@@ -651,7 +656,7 @@ async function submitAll() {
   try {
     const res = await fetch(CFG.GAS_URL, {
       method: 'POST',
-      headers: {'Content-Type':'application/json'},
+      headers: {'Content-Type':'text/plain;charset=utf-8'},
       body: JSON.stringify({
         type: 'food_order',
         branch: 'baekseok',
