@@ -58,7 +58,7 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Apple SD Gothic Neo','Malgun 
 .bb-info{flex:1;min-width:0}
 .bb-count{font-size:15px;font-weight:700;color:#1c1c1e}
 .bb-sub{font-size:12px;color:#8e8e93;margin-top:2px}
-.bb-btn{padding:13px 24px;border-radius:14px;background:#7c3aed;color:#fff;font-size:16px;font-weight:700;border:none;cursor:pointer;white-space:nowrap;flex-shrink:0}
+.bb-btn{padding:13px 24px;border-radius:14px;background:#7c3aed;color:#fff;font-size:16px;font-weight:700;border:none;cursor:pointer;white-space:nowraw;flex-shrink:0}
 .bb-btn:active{opacity:.8}
 .bb-btn:disabled{background:#c7c7cc;cursor:not-allowed}
 
@@ -83,6 +83,19 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Apple SD Gothic Neo','Malgun 
 .ds-confirm{padding:16px;border-radius:14px;background:#7c3aed;border:none;font-size:16px;font-weight:700;color:#fff;cursor:pointer}
 .ds-cancel:active{opacity:.7}
 .ds-confirm:active{opacity:.8}
+
+/* ── 수량 스텝퍼 오버레이 ── */
+.stepper-ov{display:none;position:fixed;inset:0;background:rgba(0,0,0,.55);z-index:600;align-items:flex-end;justify-content:center}
+.stepper-ov.show{display:flex}
+.stp-sheet{background:#fff;border-radius:24px 24px 0 0;padding:20px 16px 36px;width:100%;max-width:500px}
+.stp-display{display:flex;align-items:center;justify-content:center;gap:28px;padding:18px 0 14px}
+.stp-btn{width:68px;height:68px;border-radius:50%;border:none;font-size:34px;font-weight:300;cursor:pointer;display:flex;align-items:center;justify-content:center;user-select:none;transition:all .08s}
+.stp-minus{background:#f5f5f7;color:#636366}
+.stp-plus{background:#ede9fe;color:#7c3aed}
+.stp-btn:active{opacity:.7;transform:scale(.9)}
+.stp-btn.disabled{opacity:.25;pointer-events:none}
+.stp-num{font-size:68px;font-weight:700;color:#1c1c1e;min-width:90px;text-align:center;line-height:1}
+.stp-num.zero{color:#c7c7cc}
 
 /* ── 미리보기 화면 ── */
 .top-bar{display:flex;align-items:center;gap:12px;margin-bottom:20px}
@@ -229,6 +242,30 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Apple SD Gothic Neo','Malgun 
       </div>
     </div>
     <div class="item-grid" id="grid-배달관련"></div>
+
+    <!-- 주류 -->
+    <div class="sec-header">
+      <div class="sec-left">
+        <span class="sec-title">🍶 주류</span>
+        <span class="sec-badge" id="badge-주류"></span>
+      </div>
+      <div class="sec-right">
+        <span class="sec-phone" id="phone-주류"></span>
+      </div>
+    </div>
+    <div class="item-grid" id="grid-주류"></div>
+
+    <!-- 음료수 -->
+    <div class="sec-header">
+      <div class="sec-left">
+        <span class="sec-title">🥤 음료수</span>
+        <span class="sec-badge" id="badge-음료수"></span>
+      </div>
+      <div class="sec-right">
+        <span class="sec-phone" id="phone-음료수"></span>
+      </div>
+    </div>
+    <div class="item-grid" id="grid-음료수"></div>
   </div>
 
   <div class="bottom-bar">
@@ -306,6 +343,23 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Apple SD Gothic Neo','Malgun 
   </div>
 </div>
 
+<!-- 스텝퍼 오버레이 (+/-) -->
+<div class="stepper-ov" id="stepper-ov">
+  <div class="stp-sheet">
+    <div class="ds-handle"></div>
+    <div class="ds-item" id="stp-item-name">—</div>
+    <div class="stp-display">
+      <button class="stp-btn stp-minus disabled" id="stp-minus" onclick="stpChange(-1)">−</button>
+      <span class="stp-num zero" id="stp-num">0</span>
+      <button class="stp-btn stp-plus" onclick="stpChange(1)">+</button>
+    </div>
+    <div class="ds-actions">
+      <button class="ds-cancel" onclick="stpCancel()">취소</button>
+      <button class="ds-confirm" onclick="stpConfirm()">확인</button>
+    </div>
+  </div>
+</div>
+
 <!-- 로딩 -->
 <div class="loading-ov" id="loading-ov">
   <div class="spinner"></div>
@@ -328,6 +382,8 @@ const CFG = {
     '네이버'  : '',
     '사장님'  : '',
     '배달관련': '',
+    '주류'    : '',
+    '음료수'  : '',
   }
 };
 
@@ -341,6 +397,8 @@ const SUPS = [
   { key:'네이버',   emoji:'🛒', qty:false, items:['떡','식빵','다시다','들기름','과일','매실액','식용유','쌀','미나리','국간장','멸치액젓','베트남고추','오미자','토닉워터','레몬','세제','롤휴지','연육비닐','지퍼백','생강','새우젓','미원','후추','된장','쌈장','물티슈','라면사리','단무지','두루마리'] },
   { key:'사장님',   emoji:'👤', qty:false, items:['국수소스','파장소스','묵은지','식세기세제','감미','다대기','파랑봉지','흰봉지','부추봉지'] },
   { key:'배달관련', emoji:'🛵', qty:false, items:['배달봉투','사각용기 소','사각용기 중','반찬용기','기름장용기','전골용기','수저'] },
+  { key:'주류',    emoji:'🍶', qty:true,  stepper:true, items:['참이슬후래쉬','처음처럼','새로','진로','참이슬빨뚜','카스','테라','켈리','일품진로','복분자','청하'] },
+  { key:'음료수',  emoji:'🥤', qty:true,  stepper:true, items:['콜라','사이다','제로콜라','웰치스포도'] },
 ];
 
 // ═══════════════════════════════════════════════════
@@ -371,7 +429,9 @@ function init() {
       chip.innerHTML =
         `<span class="ic-name">${item}</span>` +
         `<span class="ic-qty" id="qty-${key}"></span>`;
-      if (sup.qty) {
+      if (sup.stepper) {
+        chip.addEventListener('click', () => openStepper(key, item));
+      } else if (sup.qty) {
         chip.addEventListener('click', () => openDial(key, item));
       } else {
         chip.addEventListener('click', () => toggleChip(key, sup.key));
@@ -457,7 +517,7 @@ function dkPress(k) {
   renderDial();
 }
 
-// 취소 → 선택 해제 + 닫기
+//  → 선택 해제 + 닫기
 function dialCancel() {
   if (dKey) {
     const supKey = dKey.split(':')[0];
@@ -492,6 +552,70 @@ function closeDial() {
 // 배경 탭 → 취소와 동일
 document.getElementById('dial-ov').addEventListener('click', e => {
   if (e.target === document.getElementById('dial-ov')) dialCancel();
+});
+
+// ═══════════════════════════════════════════════════
+// 스텝퍼 (+/- 수량 입력) — 주류·음료수 전용
+// ═══════════════════════════════════════════════════
+let sKey = null;
+let sQty = 0;
+
+function openStepper(key, itemName) {
+  sKey = key;
+  sQty = parseInt(ST[key].qty) || 0;
+  document.getElementById('stp-item-name').textContent = itemName;
+  renderStepper();
+  document.getElementById('stepper-ov').classList.add('show');
+}
+
+function renderStepper() {
+  const numEl   = document.getElementById('stp-num');
+  const minusEl = document.getElementById('stp-minus');
+  numEl.textContent = sQty;
+  numEl.classList.toggle('zero', sQty === 0);
+  minusEl.classList.toggle('disabled', sQty === 0);
+}
+
+function stpChange(delta) {
+  sQty = Math.max(0, sQty + delta);
+  renderStepper();
+}
+
+// 취소 → 선택 해제 + 닫기
+function stpCancel() {
+  if (sKey) {
+    const supKey = sKey.split(':')[0];
+    ST[sKey].on  = false;
+    ST[sKey].qty = '';
+    updateChip(sKey);
+    updateBadge(supKey);
+    updateBar();
+  }
+  closeStepper();
+}
+
+// 확인 → 수량 저장 + 닫기 (0이면 해제)
+function stpConfirm() {
+  if (sKey) {
+    const supKey = sKey.split(':')[0];
+    ST[sKey].on  = sQty > 0;
+    ST[sKey].qty = sQty > 0 ? String(sQty) : '';
+    updateChip(sKey);
+    updateBadge(supKey);
+    updateBar();
+  }
+  closeStepper();
+}
+
+function closeStepper() {
+  document.getElementById('stepper-ov').classList.remove('show');
+  sKey = null;
+  sQty = 0;
+}
+
+// 배경 탭 → 취소
+document.getElementById('stepper-ov').addEventListener('click', e => {
+  if (e.target === document.getElementById('stepper-ov')) stpCancel();
 });
 
 // ═══════════════════════════════════════════════════
