@@ -24,30 +24,37 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Apple SD Gothic Neo','Malgun 
 .dp-val{font-size:16px;font-weight:700;color:#1c1c1e}
 .dp-note{font-size:12px;color:#8e8e93;margin-left:auto}
 
-/* 지연 배너 (월/화) */
+/* 지연 배너 */
 .delay-banner{display:none;background:#fef3c7;border:1.5px solid #f59e0b;border-radius:12px;padding:12px 16px;margin-bottom:18px;font-size:13px;color:#92400e;line-height:1.6}
 .delay-banner strong{font-weight:700}
 
-/* 섹션 */
-.sec-header{display:flex;align-items:center;justify-content:space-between;padding:10px 4px 8px;margin-top:18px;border-bottom:1.5px solid #e0e0e0;margin-bottom:10px}
-.sec-left{display:flex;align-items:center;gap:8px}
-.sec-right{display:flex;align-items:center;gap:8px}
-.sec-title{font-size:13px;font-weight:700;color:#8e8e93;letter-spacing:.04em}
-.sec-badge{font-size:11px;font-weight:700;padding:3px 9px;border-radius:10px;background:#ede9fe;color:#7c3aed;display:none}
-.sec-badge.show{display:inline-block}
-.sec-phone{font-size:11px;color:#c7c7cc;font-weight:500}
-.sec-all-btn{font-size:11px;font-weight:600;padding:4px 10px;border-radius:10px;border:1px solid #e0e0e0;background:#fff;color:#8e8e93;cursor:pointer}
-.sec-all-btn:active{background:#f0e6ff;color:#7c3aed;border-color:#c4b5fd}
+/* ── 업체 탭 행 ── */
+.sup-tab-row{display:flex;gap:8px;overflow-x:auto;padding:2px 0 14px;-webkit-overflow-scrolling:touch;scrollbar-width:none}
+.sup-tab-row::-webkit-scrollbar{display:none}
+.sup-tab{position:relative;display:inline-flex;align-items:center;gap:4px;padding:9px 14px;border-radius:22px;border:1.5px solid #e0e0e0;background:#fff;cursor:pointer;white-space:nowrap;font-size:14px;font-weight:600;color:#636366;user-select:none;flex-shrink:0;transition:all .1s}
+.sup-tab:active{transform:scale(.93)}
+.sup-tab.active{background:#ede9fe;border-color:#7c3aed;color:#5b21b6}
+.sup-tab-badge{position:absolute;top:-7px;right:-7px;background:#ef4444;color:#fff;font-size:10px;font-weight:700;min-width:18px;height:18px;border-radius:9px;display:none;align-items:center;justify-content:center;padding:0 4px;line-height:1;border:2px solid #f5f5f7}
+.sup-tab-badge.show{display:flex}
 
-/* 아이템 그리드 */
-.item-grid{display:flex;flex-wrap:wrap;gap:8px;margin-bottom:4px}
+/* ── 활성 업체 정보 바 ── */
+.sup-info-bar{display:flex;align-items:center;justify-content:space-between;padding:4px 4px 12px}
+.sib-left{display:flex;align-items:center;gap:8px}
+.sib-title{font-size:15px;font-weight:700;color:#1c1c1e}
+.sib-phone{font-size:12px;color:#c7c7cc}
+.sib-all-btn{font-size:12px;font-weight:600;padding:5px 12px;border-radius:10px;border:1px solid #e0e0e0;background:#fff;color:#8e8e93;cursor:pointer;display:none}
+.sib-all-btn:active{background:#f0e6ff;color:#7c3aed;border-color:#c4b5fd}
+
+/* ── 아이템 섹션 ── */
+.sup-section{display:none}
+.sup-section.active{display:block}
+.item-grid{display:flex;flex-wrap:wrap;gap:8px}
 
 /* 아이템 칩 */
 .item-chip{display:flex;align-items:center;gap:5px;padding:9px 13px;border-radius:22px;border:1.5px solid #e0e0e0;background:#fff;cursor:pointer;transition:all .1s;user-select:none}
 .item-chip:active{transform:scale(.93)}
 .ic-name{font-size:14px;font-weight:600;color:#636366}
 .ic-qty{font-size:12px;font-weight:700;background:#7c3aed;color:#fff;padding:2px 7px;border-radius:10px;display:none}
-/* 선택된 칩 */
 .item-chip.on{background:#f3e8ff;border-color:#7c3aed}
 .item-chip.on .ic-name{color:#5b21b6}
 .item-chip.on .ic-qty{display:inline-block}
@@ -58,36 +65,16 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Apple SD Gothic Neo','Malgun 
 .bb-info{flex:1;min-width:0}
 .bb-count{font-size:15px;font-weight:700;color:#1c1c1e}
 .bb-sub{font-size:12px;color:#8e8e93;margin-top:2px}
-.bb-btn{padding:13px 24px;border-radius:14px;background:#7c3aed;color:#fff;font-size:16px;font-weight:700;border:none;cursor:pointer;white-space:nowraw;flex-shrink:0}
+.bb-btn{padding:13px 24px;border-radius:14px;background:#7c3aed;color:#fff;font-size:16px;font-weight:700;border:none;cursor:pointer;white-space:nowrap;flex-shrink:0}
 .bb-btn:active{opacity:.8}
 .bb-btn:disabled{background:#c7c7cc;cursor:not-allowed}
 
-/* ── 수량 다이얼 오버레이 ── */
-.dial-ov{display:none;position:fixed;inset:0;background:rgba(0,0,0,.55);z-index:600;align-items:flex-end;justify-content:center}
-.dial-ov.show{display:flex}
-.dial-sheet{background:#fff;border-radius:24px 24px 0 0;padding:20px 16px 32px;width:100%;max-width:500px}
-.ds-handle{width:40px;height:4px;background:#e0e0e0;border-radius:2px;margin:0 auto 16px}
-.ds-item{font-size:13px;font-weight:700;color:#8e8e93;text-align:center;margin-bottom:4px;letter-spacing:.04em}
-/* 수량 디스플레이 */
-.ds-disp{font-size:56px;font-weight:700;text-align:right;padding:8px 12px 14px;border-bottom:1.5px solid #e0e0e0;margin-bottom:14px;min-height:82px;display:flex;align-items:center;justify-content:flex-end;color:#1c1c1e}
-.ds-disp.empty{color:#c7c7cc}
-/* 키패드 */
-.dk-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:10px;margin-bottom:12px}
-.dk{height:60px;border-radius:14px;background:#f5f5f7;border:none;font-size:24px;font-weight:600;color:#1c1c1e;display:flex;align-items:center;justify-content:center;cursor:pointer;user-select:none;transition:background .08s}
-.dk:active{background:#ddd}
-.dk-bs{font-size:20px;background:#e8e8ed}
-.dk-blank{background:transparent;pointer-events:none}
-/* 액션 버튼 */
-.ds-actions{display:grid;grid-template-columns:1fr 2fr;gap:10px}
-.ds-cancel{padding:16px;border-radius:14px;background:#f5f5f7;border:1.5px solid #e0e0e0;font-size:16px;font-weight:700;color:#636366;cursor:pointer}
-.ds-confirm{padding:16px;border-radius:14px;background:#7c3aed;border:none;font-size:16px;font-weight:700;color:#fff;cursor:pointer}
-.ds-cancel:active{opacity:.7}
-.ds-confirm:active{opacity:.8}
-
-/* ── 수량 스텝퍼 오버레이 ── */
+/* ── 스텝퍼 오버레이 ── */
 .stepper-ov{display:none;position:fixed;inset:0;background:rgba(0,0,0,.55);z-index:600;align-items:flex-end;justify-content:center}
 .stepper-ov.show{display:flex}
 .stp-sheet{background:#fff;border-radius:24px 24px 0 0;padding:20px 16px 36px;width:100%;max-width:500px}
+.ds-handle{width:40px;height:4px;background:#e0e0e0;border-radius:2px;margin:0 auto 16px}
+.ds-item{font-size:13px;font-weight:700;color:#8e8e93;text-align:center;margin-bottom:4px;letter-spacing:.04em}
 .stp-display{display:flex;align-items:center;justify-content:center;gap:28px;padding:18px 0 14px}
 .stp-btn{width:68px;height:68px;border-radius:50%;border:none;font-size:34px;font-weight:300;cursor:pointer;display:flex;align-items:center;justify-content:center;user-select:none;transition:all .08s}
 .stp-minus{background:#f5f5f7;color:#636366}
@@ -96,16 +83,18 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Apple SD Gothic Neo','Malgun 
 .stp-btn.disabled{opacity:.25;pointer-events:none}
 .stp-num{font-size:68px;font-weight:700;color:#1c1c1e;min-width:90px;text-align:center;line-height:1}
 .stp-num.zero{color:#c7c7cc}
+.ds-actions{display:grid;grid-template-columns:1fr 2fr;gap:10px}
+.ds-cancel{padding:16px;border-radius:14px;background:#f5f5f7;border:1.5px solid #e0e0e0;font-size:16px;font-weight:700;color:#636366;cursor:pointer}
+.ds-confirm{padding:16px;border-radius:14px;background:#7c3aed;border:none;font-size:16px;font-weight:700;color:#fff;cursor:pointer}
+.ds-cancel:active{opacity:.7}
+.ds-confirm:active{opacity:.8}
 
 /* ── 미리보기 화면 ── */
 .top-bar{display:flex;align-items:center;gap:12px;margin-bottom:20px}
 .back-btn{width:40px;height:40px;border-radius:12px;background:#fff;border:1.5px solid #e0e0e0;display:flex;align-items:center;justify-content:center;font-size:20px;color:#636366;cursor:pointer;flex-shrink:0}
 .page-title{font-size:18px;font-weight:700;color:#1c1c1e}
 .page-sub{font-size:13px;color:#8e8e93;margin-top:2px}
-
-/* 지연 알림 (미리보기) */
 .preview-delay-notice{background:#fef3c7;border:1.5px solid #f59e0b;border-radius:12px;padding:12px 16px;margin-bottom:14px;font-size:13px;color:#92400e;line-height:1.6;display:none}
-
 .preview-card{background:#fff;border-radius:16px;border:1.5px solid #e0e0e0;margin-bottom:12px;overflow:hidden}
 .pc-header{display:flex;align-items:center;justify-content:space-between;padding:13px 16px;border-bottom:1px solid #f0f0f0}
 .pc-supplier{font-size:15px;font-weight:700;color:#1c1c1e}
@@ -167,112 +156,27 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Apple SD Gothic Neo','Malgun 
       <span style="font-size:12px;opacity:0.8">※ 월요일 18시 이전 발주는 즉시 전송됩니다</span>
     </div>
 
-    <!-- 미락 -->
-    <div class="sec-header">
-      <div class="sec-left">
-        <span class="sec-title">🏪 미락</span>
-        <span class="sec-badge" id="badge-미락"></span>
-      </div>
-      <div class="sec-right">
-        <span class="sec-phone" id="phone-미락"></span>
-      </div>
-    </div>
-    <div class="item-grid" id="grid-미락"></div>
+    <!-- 업체 탭 (가로 스크롤) -->
+    <div class="sup-tab-row" id="sup-tab-row"></div>
 
-    <!-- 콩나물 -->
-    <div class="sec-header">
-      <div class="sec-left">
-        <span class="sec-title">🌱 콩나물</span>
-        <span class="sec-badge" id="badge-콩나물"></span>
+    <!-- 활성 업체 정보 바 -->
+    <div class="sup-info-bar">
+      <div class="sib-left">
+        <span class="sib-title" id="sib-title"></span>
+        <span class="sib-phone" id="sib-phone"></span>
       </div>
-      <div class="sec-right">
-        <span class="sec-phone" id="phone-콩나물"></span>
-      </div>
+      <button class="sib-all-btn" id="sib-all-btn" onclick="toggleAllActive()">전체 선택</button>
     </div>
-    <div class="item-grid" id="grid-콩나물"></div>
 
-    <!-- 원당 -->
-    <div class="sec-header">
-      <div class="sec-left">
-        <span class="sec-title">🧂 원당</span>
-        <span class="sec-badge" id="badge-원당"></span>
-      </div>
-      <div class="sec-right">
-        <span class="sec-phone" id="phone-원당"></span>
-        <button class="sec-all-btn" onclick="toggleAll('원당')">전체</button>
-      </div>
-    </div>
-    <div class="item-grid" id="grid-원당"></div>
-
-    <!-- 네이버 -->
-    <div class="sec-header">
-      <div class="sec-left">
-        <span class="sec-title">🛒 네이버</span>
-        <span class="sec-badge" id="badge-네이버"></span>
-      </div>
-      <div class="sec-right">
-        <span class="sec-phone" id="phone-네이버"></span>
-        <button class="sec-all-btn" onclick="toggleAll('네이버')">전체</button>
-      </div>
-    </div>
-    <div class="item-grid" id="grid-네이버"></div>
-
-    <!-- 사장님 -->
-    <div class="sec-header">
-      <div class="sec-left">
-        <span class="sec-title">👤 사장님</span>
-        <span class="sec-badge" id="badge-사장님"></span>
-      </div>
-      <div class="sec-right">
-        <span class="sec-phone" id="phone-사장님"></span>
-        <button class="sec-all-btn" onclick="toggleAll('사장님')">전체</button>
-      </div>
-    </div>
-    <div class="item-grid" id="grid-사장님"></div>
-
-    <!-- 배달관련 -->
-    <div class="sec-header">
-      <div class="sec-left">
-        <span class="sec-title">🛵 배달관련</span>
-        <span class="sec-badge" id="badge-배달관련"></span>
-      </div>
-      <div class="sec-right">
-        <span class="sec-phone" id="phone-배달관련"></span>
-        <button class="sec-all-btn" onclick="toggleAll('배달관련')">전체</button>
-      </div>
-    </div>
-    <div class="item-grid" id="grid-배달관련"></div>
-
-    <!-- 주류 -->
-    <div class="sec-header">
-      <div class="sec-left">
-        <span class="sec-title">🍶 주류</span>
-        <span class="sec-badge" id="badge-주류"></span>
-      </div>
-      <div class="sec-right">
-        <span class="sec-phone" id="phone-주류"></span>
-      </div>
-    </div>
-    <div class="item-grid" id="grid-주류"></div>
-
-    <!-- 음료수 -->
-    <div class="sec-header">
-      <div class="sec-left">
-        <span class="sec-title">🥤 음료수</span>
-        <span class="sec-badge" id="badge-음료수"></span>
-      </div>
-      <div class="sec-right">
-        <span class="sec-phone" id="phone-음료수"></span>
-      </div>
-    </div>
-    <div class="item-grid" id="grid-음료수"></div>
+    <!-- 업체별 아이템 섹션 (하나만 표시) -->
+    <div id="all-sections"></div>
   </div>
 
   <div class="bottom-bar">
     <div class="bb-inner">
       <div class="bb-info">
         <div class="bb-count" id="bb-count">선택된 항목 없음</div>
-        <div class="bb-sub" id="bb-sub">항목을 탭하면 수량 입력</div>
+        <div class="bb-sub" id="bb-sub">업체 탭을 눌러 품목 선택</div>
       </div>
       <button class="bb-btn" id="bb-btn" onclick="goPreview()" disabled>미리보기 →</button>
     </div>
@@ -299,7 +203,7 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Apple SD Gothic Neo','Malgun 
   </div>
 </div>
 
-<!-- ═══════════════════════════════════ -->
+<!-- ════════════════════════════════════ -->
 <!--  S3: 완료                           -->
 <!-- ═══════════════════════════════════ -->
 <div class="screen" id="s-done">
@@ -315,35 +219,8 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Apple SD Gothic Neo','Malgun 
 </div>
 
 <!-- ═══════════════════════════════════ -->
-<!--  수량 다이얼                         -->
+<!--  스텝퍼 오버레이 (+/-)              -->
 <!-- ═══════════════════════════════════ -->
-<div class="dial-ov" id="dial-ov">
-  <div class="dial-sheet">
-    <div class="ds-handle"></div>
-    <div class="ds-item" id="ds-item-name">—</div>
-    <div class="ds-disp empty" id="ds-disp">–</div>
-    <div class="dk-grid">
-      <div class="dk" onclick="dkPress('1')">1</div>
-      <div class="dk" onclick="dkPress('2')">2</div>
-      <div class="dk" onclick="dkPress('3')">3</div>
-      <div class="dk" onclick="dkPress('4')">4</div>
-      <div class="dk" onclick="dkPress('5')">5</div>
-      <div class="dk" onclick="dkPress('6')">6</div>
-      <div class="dk" onclick="dkPress('7')">7</div>
-      <div class="dk" onclick="dkPress('8')">8</div>
-      <div class="dk" onclick="dkPress('9')">9</div>
-      <div class="dk dk-blank"></div>
-      <div class="dk" onclick="dkPress('0')">0</div>
-      <div class="dk dk-bs" onclick="dkPress('⌫')">⌫</div>
-    </div>
-    <div class="ds-actions">
-      <button class="ds-cancel" onclick="dialCancel()">취소</button>
-      <button class="ds-confirm" onclick="dialConfirm()">확인</button>
-    </div>
-  </div>
-</div>
-
-<!-- 스텝퍼 오버레이 (+/-) -->
 <div class="stepper-ov" id="stepper-ov">
   <div class="stp-sheet">
     <div class="ds-handle"></div>
@@ -368,7 +245,7 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Apple SD Gothic Neo','Malgun 
 
 <script>
 // ═══════════════════════════════════════════════════
-// 설정 (업체 전화번호는 실제 번호로 교체)
+// 설정
 // ═══════════════════════════════════════════════════
 const CFG = {
   GAS_URL: 'https://script.google.com/macros/s/AKfycbw97e3tDmVYUG4_cDiKQrkNuRhWAJFiUrMQuATAzfy0WEAZwhAPdMryzY-Oa8TGJe2-cg/exec',
@@ -389,6 +266,8 @@ const CFG = {
 
 // ═══════════════════════════════════════════════════
 // 발주표 데이터
+// qty:true  → 스텝퍼(+/-) 수량 입�%
+// qty:false → 탭으로 토글 선택
 // ═══════════════════════════════════════════════════
 const SUPS = [
   { key:'미락',     emoji:'🏪', qty:true,  items:['부추','양파','김가루','배추','라면','김치','날치알','고추가루','우동사리','후리가께','메밀면','대파','고추','마늘','설탕','간장','식초'] },
@@ -397,172 +276,152 @@ const SUPS = [
   { key:'네이버',   emoji:'🛒', qty:false, items:['떡','식빵','다시다','들기름','과일','매실액','식용유','쌀','미나리','국간장','멸치액젓','베트남고추','오미자','토닉워터','레몬','세제','롤휴지','연육비닐','지퍼백','생강','새우젓','미원','후추','된장','쌈장','물티슈','라면사리','단무지','두루마리'] },
   { key:'사장님',   emoji:'👤', qty:false, items:['국수소스','파장소스','묵은지','식세기세제','감미','다대기','파랑봉지','흰봉지','부추봉지'] },
   { key:'배달관련', emoji:'🛵', qty:false, items:['배달봉투','사각용기 소','사각용기 중','반찬용기','기름장용기','전골용기','수저'] },
-  { key:'주류',    emoji:'🍶', qty:true,  stepper:true, items:['참이슬후래쉬','처음처럼','새로','진로','참이슬빨뚜','카스','테라','켈리','일품진로','복분자','청하'] },
-  { key:'음료수',  emoji:'🥤', qty:true,  stepper:true, items:['콜라','사이다','제로콜라','웰치스포도'] },
+  { key:'주류',     emoji:'🍶', qty:true,  items:['참이슬후래쉬','처음처럼','새로','진로','참이슬빨뚜','카스','테라','켈리','일품진로','복분자','청하'] },
+  { key:'음료수',   emoji:'🥤', qty:true,  items:['콜라','사이다','제로콜라','웰치스포도'] },
 ];
 
 // ═══════════════════════════════════════════════════
 // 상태
 // ═══════════════════════════════════════════════════
-// state[key] = { on: bool, qty: string }
-const ST = {};
+const ST = {};        // ST['미락:부추'] = { on: bool, qty: string }
+let activeSup = SUPS[0].key;
 
-// 다이얼 상태
-let dKey  = null;   // 현재 편집 중인 아이템 key
-let dBuf  = '';     // 입력 중인 숫자 문자열
+// 스텝퍼 상태
+let sKey       = null;
+let sQty       = 0;
+let sPrevState = null;  // 열기 전 상태 저장 (취소 시 복원)
 
 // ═══════════════════════════════════════════════════
 // 초기화
 // ═══════════════════════════════════════════════════
 function init() {
   initDate();
-  SUPS.forEach(sup => {
-    const grid = document.getElementById('grid-' + sup.key);
-    const phoneEl = document.getElementById('phone-' + sup.key);
-    if (phoneEl) phoneEl.textContent = CFG.PHONES[sup.key] || '';
+
+  const tabRow  = document.getElementById('sup-tab-row');
+  const allSecs = document.getElementById('all-sections');
+
+  SUPS.forEach((sup, idx) => {
+    // 상태 초기화
     sup.items.forEach(item => {
-      const key = sup.key + ':' + item;
-      ST[key] = { on: false, qty: '' };
+      ST[sup.key + ':' + item] = { on: false, qty: '' };
+    });
+
+    // ── 탭 생성 ──
+    const tab = document.createElement('div');
+    tab.className = 'sup-tab' + (idx === 0 ? ' active' : '');
+    tab.id = 'tab-' + sup.key;
+    tab.innerHTML =
+      `${sup.emoji} ${sup.key}` +
+      `<span class="sup-tab-badge" id="tbadge-${sup.key}"></span>`;
+    tab.addEventListener('click', () => switchSup(sup.key));
+    tabRow.appendChild(tab);
+
+    // ── 섹션 + 그리드 생성 ──
+    const section = document.createElement('div');
+    section.className = 'sup-section' + (idx === 0 ? ' active' : '');
+    section.id = 'section-' + sup.key;
+
+    const grid = document.createElement('div');
+    grid.className = 'item-grid';
+    grid.id = 'grid-' + sup.key;
+
+    sup.items.forEach(item => {
+      const key  = sup.key + ':' + item;
       const chip = document.createElement('div');
       chip.className = 'item-chip';
       chip.id = 'chip-' + key;
       chip.innerHTML =
         `<span class="ic-name">${item}</span>` +
         `<span class="ic-qty" id="qty-${key}"></span>`;
-      if (sup.stepper) {
+
+      if (sup.qty) {
         chip.addEventListener('click', () => openStepper(key, item));
-      } else if (sup.qty) {
-        chip.addEventListener('click', () => openDial(key, item));
       } else {
         chip.addEventListener('click', () => toggleChip(key, sup.key));
       }
       grid.appendChild(chip);
     });
+
+    section.appendChild(grid);
+    allSecs.appendChild(section);
   });
+
+  updateInfoBar(activeSup);
   updateBar();
 }
 
-// ─── 날짜 & 지연 감지 ───────────────────────────
-function isDelayed() {
-  const now = new Date();
-  const d = now.getDay();   // 1=월, 2=화
-  const h = now.getHours(); // 0~23
-  if (d === 2) return true;          // 화요일 → 항상 지연
-  if (d === 1 && h >= 18) return true; // 월요일 18시 이후 → 지연
-  return false;
+// ═══════════════════════════════════════════════════
+// 업체 탭 전환
+// ═══════════════════════════════════════════════════
+function switchSup(key) {
+  document.getElementById('tab-'     + activeSup).classList.remove('active');
+  document.getElementById('section-' + activeSup).classList.remove('active');
+  activeSup = key;
+  document.getElementById('tab-'     + key).classList.add('active');
+  document.getElementById('section-' + key).classList.add('active');
+  updateInfoBar(key);
 }
 
-function initDate() {
-  const now = new Date();
-  const DAY = ['일','월','화','수','목','금','토'];
-  const m = now.getMonth()+1, d = now.getDate(), w = DAY[now.getDay()];
-  document.getElementById('date-main').textContent = `${m}월 ${d}일 (${w})`;
+// ═══════════════════════════════════════════════════
+// 정보 바 업데이트
+// ═══════════════════════════════════════════════════
+function updateInfoBar(key) {
+  const sup = SUPS.find(s => s.key === key);
+  document.getElementById('sib-title').textContent = sup.emoji + ' ' + sup.key;
+  document.getElementById('sib-phone').textContent = CFG.PHONES[key] || '';
 
-  if (isDelayed()) {
-    document.getElementById('delay-banner').style.display = 'block';
-    // 수요일 계산
-    const daysToWed = now.getDay() === 1 ? 2 : 1;
-    const wed = new Date(now); wed.setDate(d + daysToWed);
-    document.getElementById('date-note').textContent =
-      `납품: ${wed.getMonth()+1}/${wed.getDate()}(수)`;
+  const allBtn = document.getElementById('sib-all-btn');
+  if (!sup.qty) {
+    allBtn.style.display = 'block';
+    const allOn = sup.items.every(item => ST[sup.key + ':' + item].on);
+    allBtn.textContent = allOn ? '전체 해제' : '전체 선택';
   } else {
-    const tmr = new Date(now); tmr.setDate(d + 1);
-    document.getElementById('date-note').textContent =
-      `납품: ${tmr.getMonth()+1}/${tmr.getDate()}(${DAY[tmr.getDay()]})`;
+    allBtn.style.display = 'none';
   }
 }
 
 // ═══════════════════════════════════════════════════
-// 체크 토글 (수량 불필요 업체 — 1탭 선택, 2탭 해제)
+// 전체 선택/해제 (현재 활성 업체, qty:false 전용)
+// ═══════════════════════════════════════════════════
+function toggleAllActive() {
+  const sup = SUPS.find(s => s.key === activeSup);
+  if (!sup || sup.qty) return;
+  const allOn = sup.items.every(item => ST[sup.key + ':' + item].on);
+  sup.items.forEach(item => {
+    const key = sup.key + ':' + item;
+    ST[key].on  = !allOn;
+    if (allOn) ST[key].qty = '';
+    updateChip(key);
+  });
+  updateBadge(sup.key);
+  updateBar();
+  document.getElementById('sib-all-btn').textContent = allOn ? '전체 선택' : '전체 해제';
+}
+
+// ═══════════════════════════════════════════════════
+// 토글 칩 (qty:false 업체)
 // ═══════════════════════════════════════════════════
 function toggleChip(key, supKey) {
-  ST[key].on = !ST[key].on;
+  ST[key].on  = !ST[key].on;
   ST[key].qty = '';
   updateChip(key);
   updateBadge(supKey);
   updateBar();
-}
-
-// ═══════════════════════════════════════════════════
-// 다이얼 열기 / 키 입력 / 닫기
-// ═══════════════════════════════════════════════════
-function openDial(key, itemName) {
-  dKey = key;
-  dBuf = ST[key].qty || '';
-  document.getElementById('ds-item-name').textContent = itemName;
-  renderDial();
-  document.getElementById('dial-ov').classList.add('show');
-}
-
-function renderDial() {
-  const el = document.getElementById('ds-disp');
-  if (dBuf === '') {
-    el.textContent = '–';
-    el.classList.add('empty');
-  } else {
-    el.textContent = dBuf;
-    el.classList.remove('empty');
+  // 전체 버튼 텍스트 동기화
+  if (supKey === activeSup && !SUPS.find(s => s.key === supKey).qty) {
+    const sup   = SUPS.find(s => s.key === supKey);
+    const allOn = sup.items.every(item => ST[supKey + ':' + item].on);
+    document.getElementById('sib-all-btn').textContent = allOn ? '전체 해제' : '전체 선택';
   }
 }
 
-function dkPress(k) {
-  if (k === '⌫') {
-    dBuf = dBuf.slice(0, -1);
-  } else {
-    if (dBuf.length >= 4) return;
-    // 앞자리 0 방지
-    if (dBuf === '0') dBuf = k;
-    else dBuf += k;
-  }
-  renderDial();
-}
-
-//  → 선택 해제 + 닫기
-function dialCancel() {
-  if (dKey) {
-    const supKey = dKey.split(':')[0];
-    ST[dKey].on  = false;
-    ST[dKey].qty = '';
-    updateChip(dKey);
-    updateBadge(supKey);
-    updateBar();
-  }
-  closeDial();
-}
-
-// 확인 → 선택 + 닫기
-function dialConfirm() {
-  if (dKey) {
-    const supKey = dKey.split(':')[0];
-    ST[dKey].on  = true;
-    ST[dKey].qty = dBuf.trim();
-    updateChip(dKey);
-    updateBadge(supKey);
-    updateBar();
-  }
-  closeDial();
-}
-
-function closeDial() {
-  document.getElementById('dial-ov').classList.remove('show');
-  dKey = null;
-  dBuf = '';
-}
-
-// 배경 탭 → 취소와 동일
-document.getElementById('dial-ov').addEventListener('click', e => {
-  if (e.target === document.getElementById('dial-ov')) dialCancel();
-});
-
 // ═══════════════════════════════════════════════════
-// 스텝퍼 (+/- 수량 입력) — 주류·음료수 전용
+// 스텝퍼 (+/-) 수량 입�%
 // ═══════════════════════════════════════════════════
-let sKey = null;
-let sQty = 0;
-
 function openStepper(key, itemName) {
-  sKey = key;
-  sQty = parseInt(ST[key].qty) || 0;
+  sKey       = key;
+  sPrevState = { ...ST[key] };         // 취소 시 복원용
+  sQty       = parseInt(ST[key].qty) || 0;
   document.getElementById('stp-item-name').textContent = itemName;
   renderStepper();
   document.getElementById('stepper-ov').classList.add('show');
@@ -581,12 +440,11 @@ function stpChange(delta) {
   renderStepper();
 }
 
-// 취소 → 선택 해제 + 닫기
+// 취소 → 열기 전 상태로 복원
 function stpCancel() {
-  if (sKey) {
+  if (sKey && sPrevState) {
     const supKey = sKey.split(':')[0];
-    ST[sKey].on  = false;
-    ST[sKey].qty = '';
+    ST[sKey] = { ...sPrevState };
     updateChip(sKey);
     updateBadge(supKey);
     updateBar();
@@ -594,7 +452,7 @@ function stpCancel() {
   closeStepper();
 }
 
-// 확인 → 수량 저장 + 닫기 (0이면 해제)
+// 확인 → 수량 저장 (0이면 선택 해제)
 function stpConfirm() {
   if (sKey) {
     const supKey = sKey.split(':')[0];
@@ -609,8 +467,7 @@ function stpConfirm() {
 
 function closeStepper() {
   document.getElementById('stepper-ov').classList.remove('show');
-  sKey = null;
-  sQty = 0;
+  sKey = null; sQty = 0; sPrevState = null;
 }
 
 // 배경 탭 → 취소
@@ -619,26 +476,10 @@ document.getElementById('stepper-ov').addEventListener('click', e => {
 });
 
 // ═══════════════════════════════════════════════════
-// 전체 선택 토글 (수량 없이 check only)
-// ═══════════════════════════════════════════════════
-function toggleAll(supKey) {
-  const sup = SUPS.find(s => s.key === supKey);
-  const allOn = sup.items.every(item => ST[supKey+':'+item].on);
-  sup.items.forEach(item => {
-    const key = supKey+':'+item;
-    ST[key].on = !allOn;
-    if (allOn) ST[key].qty = '';
-    updateChip(key);
-  });
-  updateBadge(supKey);
-  updateBar();
-}
-
-// ═══════════════════════════════════════════════════
 // 칩 / 배지 / 바텀바 업데이트
 // ═══════════════════════════════════════════════════
 function updateChip(key) {
-  const s = ST[key];
+  const s    = ST[key];
   const chip = document.getElementById('chip-' + key);
   const qEl  = document.getElementById('qty-'  + key);
   chip.classList.toggle('on', s.on);
@@ -652,26 +493,57 @@ function updateChip(key) {
 
 function updateBadge(supKey) {
   const sup = SUPS.find(s => s.key === supKey);
-  const cnt = sup.items.filter(i => ST[supKey+':'+i].on).length;
-  const el  = document.getElementById('badge-' + supKey);
+  const cnt = sup.items.filter(i => ST[supKey + ':' + i].on).length;
+  const el  = document.getElementById('tbadge-' + supKey);
   el.textContent = cnt;
   el.classList.toggle('show', cnt > 0);
 }
 
 function updateBar() {
-  let total = 0; const sups = new Set();
+  let total = 0;
+  const sups = new Set();
   SUPS.forEach(sup => sup.items.forEach(item => {
-    if (ST[sup.key+':'+item].on) { total++; sups.add(sup.key); }
+    if (ST[sup.key + ':' + item].on) { total++; sups.add(sup.key); }
   }));
   const btn = document.getElementById('bb-btn');
   if (total === 0) {
     document.getElementById('bb-count').textContent = '선택된 항목 없음';
-    document.getElementById('bb-sub').textContent   = '항목을 탭하면 수량 입력';
+    document.getElementById('bb-sub').textContent   = '업체 탭을 눌러 품목 선택';
     btn.disabled = true;
   } else {
     document.getElementById('bb-count').textContent = `${total}개 항목 선택됨`;
     document.getElementById('bb-sub').textContent   = `${sups.size}개 업체 발주 예정`;
     btn.disabled = false;
+  }
+}
+
+// ═══════════════════════════════════════════════════
+// 날짜 & 지연 감지
+// ═══════════════════════════════════════════════════
+function isDelayed() {
+  const now = new Date();
+  const d = now.getDay(), h = now.getHours();
+  if (d === 2) return true;
+  if (d === 1 && h >= 18) return true;
+  return false;
+}
+
+function initDate() {
+  const now = new Date();
+  const DAY = ['일','월','화','수','목','금','토'];
+  const m = now.getMonth()+1, d = now.getDate(), w = DAY[now.getDay()];
+  document.getElementById('date-main').textContent = `${m}월 ${d}일 (${w})`;
+
+  if (isDelayed()) {
+    document.getElementById('delay-banner').style.display = 'block';
+    const daysToWed = now.getDay() === 1 ? 2 : 1;
+    const wed = new Date(now); wed.setDate(d + daysToWed);
+    document.getElementById('date-note').textContent =
+      `납품: ${wed.getMonth()+1}/${wed.getDate()}(수)`;
+  } else {
+    const tmr = new Date(now); tmr.setDate(d + 1);
+    document.getElementById('date-note').textContent =
+      `납품: ${tmr.getMonth()+1}/${tmr.getDate()}(${DAY[tmr.getDay()]})`;
   }
 }
 
@@ -683,7 +555,6 @@ function buildMsgs() {
   const DAY = ['일','월','화','수','목','금','토'];
   const delayed = isDelayed();
 
-  // 납품일 계산
   let delivDate;
   if (delayed) {
     const toWed = now.getDay() === 1 ? 2 : 1;
@@ -694,21 +565,21 @@ function buildMsgs() {
   const dateStr = `${delivDate.getMonth()+1}/${delivDate.getDate()}(${DAY[delivDate.getDay()]})`;
 
   return SUPS.flatMap(sup => {
-    const sel = sup.items.filter(item => ST[sup.key+':'+item].on);
+    const sel = sup.items.filter(item => ST[sup.key + ':' + item].on);
     if (!sel.length) return [];
 
     const itemStr = sel.map(item => {
-      const qty = ST[sup.key+':'+item].qty;
+      const qty = ST[sup.key + ':' + item].qty;
       return qty ? `${item} ${qty}` : item;
     }).join(', ');
 
-    const body = `[백석점 발주 ${dateStr}]\n${itemStr}`;
-    const bytes = byteLen(body);
+    const body    = `[백석점 발주 ${dateStr}]\n${itemStr}`;
+    const bytes   = byteLen(body);
     const channel = bytes <= CFG.SMS_MAX_BYTES ? 'SMS'
                   : bytes <= CFG.LMS_MAX_BYTES ? 'LMS' : 'KAKAO';
 
     return [{ supplier:sup.key, emoji:sup.emoji,
-               phone: CFG.PHONES[sup.key]||'',
+               phone: CFG.PHONES[sup.key] || '',
                body, bytes, channel, items:sel, delayed }];
   });
 }
@@ -723,18 +594,16 @@ function byteLen(str) {
 }
 
 // ═══════════════════════════════════════════════════
-// 미리보기 화면
+// 미리보기
 // ═══════════════════════════════════════════════════
 function goPreview() {
   const msgs = buildMsgs();
   if (!msgs.length) return;
 
   const delayed = msgs.some(m => m.delayed);
-  const notice = document.getElementById('preview-delay-notice');
-  notice.style.display = delayed ? 'block' : 'none';
-
-  const submitBtn = document.getElementById('submit-btn');
-  submitBtn.textContent = delayed ? '📋 발주 저장 (화요일 20:30 자동발송)' : '📨 전체 발송하기';
+  document.getElementById('preview-delay-notice').style.display = delayed ? 'block' : 'none';
+  document.getElementById('submit-btn').textContent = delayed
+    ? '📋 발주 저장 (화요일 20:30 자동발송)' : '📨 전체 발송하기';
 
   const cards = document.getElementById('preview-cards');
   cards.innerHTML = '';
@@ -767,14 +636,10 @@ function esc(s) {
 // 발송
 // ═══════════════════════════════════════════════════
 async function submitAll() {
-  const msgs = buildMsgs();
+  const msgs    = buildMsgs();
   const delayed = msgs.some(m => m.delayed);
 
-  if (!CFG.GAS_URL) {
-    // 개발 모드
-    showDone(msgs, true);
-    return;
-  }
+  if (!CFG.GAS_URL) { showDone(msgs, true); return; }
 
   showLoading(delayed ? '발주 저장 중...' : '문자 발송 중...');
   try {
@@ -804,9 +669,9 @@ async function submitAll() {
 
 function showDone(msgs, dev) {
   const delayed = msgs.some(m => m.delayed);
-  document.getElementById('done-icon').textContent = dev ? '📋' : (delayed ? '🕗' : '✅');
+  document.getElementById('done-icon').textContent  = dev ? '📋' : (delayed ? '🕗' : '✅');
   document.getElementById('done-title').textContent = dev ? '미리보기 완료' : (delayed ? '저장 완료!' : '발송 완료!');
-  document.getElementById('done-sub').textContent = dev
+  document.getElementById('done-sub').textContent   = dev
     ? '⚠️ 개발 모드 (GAS URL 미설정)\n실제 발송은 GAS URL 설정 후 가능합니다'
     : delayed
       ? `화요일 20:30에 ${msgs.length}개 업체로 자동 발송됩니다`
@@ -843,13 +708,14 @@ function hideLoading() {
 function reset() {
   SUPS.forEach(sup => {
     sup.items.forEach(item => {
-      const key = sup.key+':'+item;
+      const key = sup.key + ':' + item;
       ST[key] = { on: false, qty: '' };
       updateChip(key);
     });
     updateBadge(sup.key);
   });
   updateBar();
+  switchSup(SUPS[0].key);
   showScreen('s-main');
 }
 
