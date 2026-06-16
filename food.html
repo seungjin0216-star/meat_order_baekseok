@@ -142,6 +142,7 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Apple SD Gothic Neo','Malgun 
   <div class="container">
     <div class="brand">🥬 식자재 발주</div>
     <div class="brand-loc">🟢 백석점</div>
+    <a href="index.html" style="display:inline-flex;align-items:center;gap:6px;background:#faf5ff;color:#5b21b6;font-size:13px;font-weight:600;padding:6px 14px;border-radius:20px;border:1.5px solid #ddd6fe;text-decoration:none;margin-bottom:16px;">🍖 막창·발주·입고</a>
 
     <div class="date-pill">
       <span class="dp-label">발주일</span>
@@ -203,7 +204,7 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Apple SD Gothic Neo','Malgun 
   </div>
 </div>
 
-<!-- ════════════════════════════════════ -->
+<!-- ═══════════════════════════════════ -->
 <!--  S3: 완료                           -->
 <!-- ═══════════════════════════════════ -->
 <div class="screen" id="s-done">
@@ -261,18 +262,22 @@ const CFG = {
     '배달관련': '01041216995',
     '주류'    : '01056079640',
     '음료수'  : '01037982411',
+  },
+  // 동일 내용을 추가로 받을 번호 (CC)
+  CC: {
+    '사장님': ['01041216995'],
   }
 };
 
 // ═══════════════════════════════════════════════════
 // 발주표 데이터
-// qty:true  → 스텝퍼(+/-) 수량 입�%
+// qty:true  → 스텝퍼(+/-) 수량 입력
 // qty:false → 탭으로 토글 선택
 // ═══════════════════════════════════════════════════
 const SUPS = [
-  { key:'미락',     emoji:'🏪', qty:true,  items:['부추','양파','김가루','배추','라면','김치','날치알','고추가루','우동사리','후리가께','메밀면','대파','고추','마늘','설탕','간장','식초'] },
+  { key:'미락',     emoji:'🏪', qty:true,  items:['부추','양파','김가루','배추','라면','김치','날치알','고추가루','우동사리','후리가께','메밀면','대파','고추','마늘','설탕','간장','식초','굵은소금','꽃소금'] },
   { key:'콩나물',   emoji:'🌱', qty:true,  items:['콩나물'] },
-  { key:'원당',     emoji:'🧂', qty:false, items:['깍두기','굵은소금','꽃소금'] },
+  { key:'원당',     emoji:'🧂', qty:false, items:['깍두기'] },
   { key:'네이버',   emoji:'🛒', qty:false, items:['떡','식빵','다시다','들기름','과일','매실액','식용유','쌀','미나리','국간장','멸치액젓','베트남고추','오미자','토닉워터','레몬','세제','롤휴지','연육비닐','지퍼백','생강','새우젓','미원','후추','된장','쌈장','물티슈','라면사리','단무지','두루마리'] },
   { key:'사장님',   emoji:'👤', qty:false, items:['국수소스','파장소스','묵은지','식세기세제','감미','다대기','파랑봉지','흰봉지','부추봉지'] },
   { key:'배달관련', emoji:'🛵', qty:false, items:['배달봉투','사각용기 소','사각용기 중','반찬용기','기름장용기','전골용기','수저'] },
@@ -578,9 +583,13 @@ function buildMsgs() {
     const channel = bytes <= CFG.SMS_MAX_BYTES ? 'SMS'
                   : bytes <= CFG.LMS_MAX_BYTES ? 'LMS' : 'KAKAO';
 
-    return [{ supplier:sup.key, emoji:sup.emoji,
+    const mainMsg = { supplier:sup.key, emoji:sup.emoji,
                phone: CFG.PHONES[sup.key] || '',
-               body, bytes, channel, items:sel, delayed }];
+               body, bytes, channel, items:sel, delayed };
+    const ccMsgs = (CFG.CC[sup.key] || []).map(ccPhone => ({
+      ...mainMsg, phone: ccPhone, channel: byteLen(body) <= CFG.SMS_MAX_BYTES ? 'SMS' : 'LMS'
+    }));
+    return [mainMsg, ...ccMsgs];
   });
 }
 
