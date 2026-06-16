@@ -36,6 +36,8 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Apple SD Gothic Neo','Malgun 
 .sup-tab.active{background:#ede9fe;border-color:#7c3aed;color:#5b21b6}
 .sup-tab-badge{position:absolute;top:-7px;right:-7px;background:#ef4444;color:#fff;font-size:10px;font-weight:700;min-width:18px;height:18px;border-radius:9px;display:none;align-items:center;justify-content:center;padding:0 4px;line-height:1;border:2px solid #f5f5f7}
 .sup-tab-badge.show{display:flex}
+.sup-tab.disabled{opacity:.45;cursor:not-allowed;border-style:dashed}
+.sup-tab.disabled:active{transform:none}
 
 /* ── 활성 업체 정보 바 ── */
 .sup-info-bar{display:flex;align-items:center;justify-content:space-between;padding:4px 4px 12px}
@@ -313,10 +315,12 @@ function init() {
 
     // ── 탭 생성 ──
     const tab = document.createElement('div');
-    tab.className = 'sup-tab' + (idx === 0 ? ' active' : '');
+    const isLocked = sup.key === '주류' && !isJuryuDay();
+    tab.className = 'sup-tab' + (idx === 0 ? ' active' : '') + (isLocked ? ' disabled' : '');
     tab.id = 'tab-' + sup.key;
     tab.innerHTML =
       `${sup.emoji} ${sup.key}` +
+      (isLocked ? ' 🔒' : '') +
       `<span class="sup-tab-badge" id="tbadge-${sup.key}"></span>`;
     tab.addEventListener('click', () => switchSup(sup.key));
     tabRow.appendChild(tab);
@@ -358,7 +362,17 @@ function init() {
 // ═══════════════════════════════════════════════════
 // 업체 탭 전환
 // ═══════════════════════════════════════════════════
+// 주류 발주 가능 요일: 수(3)·목(4)·일(0)
+function isJuryuDay() {
+  const d = new Date().getDay();
+  return d === 0 || d === 3 || d === 4;
+}
+
 function switchSup(key) {
+  if (key === '주류' && !isJuryuDay()) {
+    alert('🍶 주류는 수·목·일에만 발주 가능합니다.\n오늘은 발주할 수 없는 날입니다.');
+    return;
+  }
   document.getElementById('tab-'     + activeSup).classList.remove('active');
   document.getElementById('section-' + activeSup).classList.remove('active');
   activeSup = key;
