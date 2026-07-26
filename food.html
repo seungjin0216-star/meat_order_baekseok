@@ -286,7 +286,7 @@ const SUPS = [
   { key:'사장님',   emoji:'👤', qty:false, items:['국수소스','파장소스','묵은지','식세기세제','감미','다대기','파랑봉지','흰봉지','부추봉지'] },
   { key:'배달관련', emoji:'🛵', qty:false, items:['배달봉투','사각용기 소','사각용기 중','반찬용기','기름장용기','전골용기','수저'] },
   { key:'주류',     emoji:'🍶', qty:true,  items:['참이슬후래쉬','처음처럼','새로','진로','참이슬빨뚜','카스','테라','켈리','일품진로','복분자','청하','매화수'] },
-  { key:'음료수',   emoji:'🥤', qty:true,  items:['콜라','사이다','제로콜라','웰치스포도'] },
+  { key:'음료수',   emoji:'🥤', qty:true,  items:['콜라','사이다','제로콜라','파인애플','웰치스포도'] },
 ];
 
 // ═══════════════════════════════════════════════════
@@ -589,10 +589,11 @@ function buildMsgs() {
     const sel = sup.items.filter(item => ST[sup.key + ':' + item].on);
     if (!sel.length) return [];
 
-    const itemStr = sel.map(item => {
+    const itemsWithQty = sel.map(item => {
       const qty = ST[sup.key + ':' + item].qty;
       return qty ? `${item} ${qty}` : item;
-    }).join(', ');
+    });
+    const itemStr = itemsWithQty.join(', ');
 
     const body    = `[백석점 발주 ${dateStr}]\n${itemStr}`;
     const bytes   = byteLen(body);
@@ -601,7 +602,7 @@ function buildMsgs() {
 
     const mainMsg = { supplier:sup.key, emoji:sup.emoji,
                phone: CFG.PHONES[sup.key] || '',
-               body, bytes, channel, items:sel, delayed };
+               body, bytes, channel, items:itemsWithQty, delayed };
     const ccMsgs = (CFG.CC[sup.key] || []).map(ccPhone => ({
       ...mainMsg, phone: ccPhone, channel: byteLen(body) <= CFG.SMS_MAX_BYTES ? 'SMS' : 'LMS'
     }));
