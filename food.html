@@ -9,6 +9,11 @@
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-status-bar-style" content="default">
 <meta name="apple-mobile-web-app-title" content="식자재 발주">
+
+<!-- ⚠️ 캐시 금지 — 자세한 이유는 index.html 같은 자리 참고 -->
+<meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
+<meta http-equiv="Pragma" content="no-cache">
+<meta http-equiv="Expires" content="0">
 <style>
 *{box-sizing:border-box;margin:0;padding:0;-webkit-tap-highlight-color:transparent}
 html,body{width:100%;overflow-x:hidden}
@@ -801,6 +806,22 @@ function reset() {
 // 시작
 // ═══════════════════════════════════════════════════
 init();
+</script>
+
+<!-- ⚠️ 버전 표시 — 2026-08-22 추가
+     지금 보고 있는 화면이 최신인지 눈으로 확인하기 위한 것입니다.
+     코드를 고쳐 올릴 때마다 아래 APP_VERSION 을 같이 바꿉니다.
+     길게 누르면 캐시를 비우고 강제로 새로 받습니다. -->
+<div id="app-version"
+     style="position:fixed;right:6px;bottom:5px;z-index:9999;font-size:10px;
+            color:#cbd5e1;letter-spacing:.3px;user-select:none;cursor:pointer;">v2026-08-22a</div>
+<script>
+const APP_VERSION = '2026-08-22a';
+document.getElementById('app-version').addEventListener('click', function () {
+  if (!confirm('최신 화면으로 다시 받아올까요?\n(v' + APP_VERSION + ')')) return;
+  // 주소 뒤에 시각을 붙이면 아이폰이 저장해둔 화면을 못 쓰고 새로 받는다
+  location.replace(location.pathname + '?t=' + Date.now());
+});
 </script>
 </body>
 </html>
