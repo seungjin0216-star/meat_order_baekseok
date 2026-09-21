@@ -60,6 +60,9 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Apple SD Gothic Neo','Malgun 
 .sup-section{display:none}
 .sup-section.active{display:block}
 .item-grid{display:flex;flex-wrap:wrap;gap:8px}
+/* 자리별 머리글 — flex 줄을 통째로 차지해 다음 칩들이 아래로 내려갑니다 */
+.grp-head{flex:0 0 100%;font-size:12px;font-weight:700;color:#8e8e93;margin:10px 0 -2px;padding-left:3px}
+.grp-head:first-child{margin-top:0}
 
 /* 아이템 칩 */
 .item-chip{display:flex;align-items:center;gap:5px;padding:9px 13px;border-radius:22px;border:1.5px solid #e0e0e0;background:#fff;cursor:pointer;transition:all .1s;user-select:none}
@@ -296,22 +299,68 @@ const CFG = {
 
 // ═══════════════════════════════════════════════════
 // 발주표 데이터
-// qty:true  → 스텝퍼(+/-) 수량 입력
-// qty:false → 탭으로 토글 선택
+//
+//  qty:true   → 그 업체 품목 전부 스텝퍼(+/-) 수량 입력
+//  qty:false  → 그 업체 품목 전부 탭으로 토글 선택
+//
+//  ⚠️ 2026-09-21 추가 — qtyOnly
+//     업체 안에서 품목마다 다를 때 씁니다.
+//     qtyOnly 에 적힌 품목만 스텝퍼이고 나머지는 토글입니다.
+//     미락이 그렇습니다 — 부추·대파처럼 몇 단인지 세는 것만 수량이 필요하고
+//     설탕·간장 같은 것은 「떨어졌다」만 알리면 됩니다.
+//
+//  ⚠️ qtyOnly 가 있는 업체는 「전체 선택」 버튼을 숨깁니다.
+//     전체 선택이 스텝퍼 품목까지 켜면 수량 없이 문자가 나가서 업체가 헷갈립니다.
+//
+//  ⚠️ 2026-09-21 추가 — groups
+//     품목이 많은 업체(네이버)는 놓는 자리별로 묶어서 보여줍니다.
+//     사장님 말: 「네이버에서 보기좋게 분류를 한번해야겠어」
+//     창고를 도는 순서대로 묶여 있어야 빠뜨리지 않습니다.
+//     groups 를 쓰면 items 는 init() 에서 자동으로 만들어집니다 — 손으로 안 적습니다.
 // ═══════════════════════════════════════════════════
 const SUPS = [
-  { key:'미락',     emoji:'🏪', qty:true,  items:['부추','양파','김가루','배추','라면','김치','묵은지','날치알','고추가루','우동사리','후리가께','메밀면','대파','고추','마늘','설탕','간장','식초','굵은소금','꽃소금'] },
+  // ⚠️ 2026-09-21 품목 이름 변경 (사장님 지시)
+  //      김치   → 다진김치   (볶음밥용)
+  //      묵은지 → 포기김치
+  //    마감체크리스트의 「볶음밥김치」가 다진김치, 「묵은지」가 포기김치로 이어집니다.
+  { key:'미락',     emoji:'🏪', qty:false,
+    qtyOnly:['부추','김가루','날치알','우동사리','메밀면','대파'],
+    items:['부추','양파','김가루','배추','라면','다진김치','포기김치','날치알','고추가루','우동사리','후리가께','메밀면','대파','고추','마늘','설탕','간장','식초','굵은소금','꽃소금'] },
+
   { key:'콩나물',   emoji:'🌱', qty:true,  items:['콩나물'] },
-  { key:'원당',     emoji:'🧂', qty:false, items:['깍두기'] },
-  // 품목 순서 = 화면에 뜨는 순서. 비슷한 것끼리 붙여두면 발주 넣을 때 눈으로 훑기 쉽다.
-  //   까나리 → 멸치액젓 옆 (같은 액젓류)
-  //   냅킨   → 물티슈 옆 (같은 테이블 소모품)
-  { key:'네이버',   emoji:'🛒', qty:false, items:['떡','식빵','다시다','들기름','과일','매실액','식용유','쌀','미나리','국간장','멸치액젓','까나리','베트남고추','오미자','토닉워터','레몬','세제','롤휴지','연육비닐','지퍼백','생강','새우젓','미원','후추','된장','쌈장','물티슈','냅킨','라면사리','단무지','두루마리','청포도','헛개수','불쇼술','키친타올'] },
+
+  // ⚠️ 2026-09-21 불쇼술을 네이버에서 이쪽으로 옮겼습니다 (사장님 확인)
+  { key:'원당',     emoji:'🧂', qty:false, items:['깍두기','불쇼술'] },
+
+  // 놓는 자리별로 묶습니다. 창고를 도는 순서대로입니다.
+  { key:'네이버',   emoji:'🛒', qty:false, groups:[
+    { label:'냉장·냉동',       items:['떡','식빵','과일','미나리','오미자','레몬','생강','된장','오이'] },
+    { label:'찬냉장고 위 선반', items:['다시다','베트남고추','미원','후추','라면사리'] },
+    { label:'찬냉장고',        items:['새우젓','쌈장','단무지'] },
+    { label:'식세기 옆 선반',   items:['들기름','매실액','식용유','쌀','국간장','멸치액젓'] },
+    { label:'화구 옆 선반',     items:['까나리'] },
+    { label:'창고 서랍',       items:['토닉워터','롤휴지','연육비닐','지퍼백','물티슈','냅킨','두루마리'] },
+    { label:'그 외',           items:['세제','청포도','헛개수','키친타올'] },
+  ]},
+
   { key:'사장님',   emoji:'👤', qty:false, items:['국수소스','파장소스','식세기세제','감미','다대기','파랑봉지','흰봉지','부추봉지'] },
   { key:'배달관련', emoji:'🛵', qty:false, items:['배달봉투','사각용기 소','사각용기 중','반찬용기','기름장용기','전골용기','수저'] },
   { key:'주류',     emoji:'🍶', qty:true,  items:['참이슬후래쉬','처음처럼','새로','진로','참이슬빨뚜','카스','테라','켈리','일품진로','복분자','청하','매화수'] },
   { key:'음료수',   emoji:'🥤', qty:true,  items:['콜라','사이다','제로콜라','파인애플','웰치스포도'] },
 ];
+
+// ── 품목 하나가 수량 입력인가 ──────────────────────────
+//    ⚠️ 이제 업체가 아니라 품목마다 정해집니다.
+function 수량품목_(sup, item) {
+  if (sup.qtyOnly) return sup.qtyOnly.indexOf(item) >= 0;
+  return !!sup.qty;
+}
+
+// ── 이 업체가 수량과 토글이 섞여 있나 ──────────────────
+//    섞여 있으면 「전체 선택」 버튼을 숨깁니다.
+function 섞인업체_(sup) {
+  return !!(sup.qtyOnly && sup.qtyOnly.length);
+}
 
 // ═══════════════════════════════════════════════════
 // 상태
@@ -361,6 +410,17 @@ function 저장() {
   } catch (e) { /* 저장 못 해도 앱은 돌아야 한다 */ }
 }
 
+// ⚠️ 2026-09-21 — 품목 이름이 바뀌었을 때 지난 체크를 이어 붙입니다.
+//
+//    이름을 바꾸면 폰에 저장돼 있던 「미락:김치」가 어디에도 안 맞아서
+//    아무 말 없이 사라집니다. 체크해둔 사람은 발주가 빠진 걸 모릅니다.
+//    ⚠️ 이 표는 지우지 마세요. 앞으로 이름을 바꿀 때도 여기에 한 줄 추가합니다.
+const 옛이름_ = {
+  '미락:김치'    : '미락:다진김치',
+  '미락:묵은지'  : '미락:포기김치',
+  '네이버:불쇼술' : '원당:불쇼술',
+};
+
 function 불러오기() {
   try {
     const raw = localStorage.getItem(SAVE_KEY);
@@ -369,7 +429,8 @@ function 불러오기() {
 
     // 체크는 날짜와 상관없이 되살린다
     Object.keys(saved.st || {}).forEach(k => {
-      if (ST[k]) ST[k] = saved.st[k];
+      const 키 = 옛이름_[k] || k;        // 이름이 바뀐 것은 새 이름으로 옮겨 받는다
+      if (ST[키]) ST[키] = saved.st[k];
     });
 
     // 「보냄」 표시는 오늘 것만
@@ -409,6 +470,12 @@ function init() {
   const tabRow  = document.getElementById('sup-tab-row');
   const allSecs = document.getElementById('all-sections');
 
+  // ⚠️ groups 를 쓰는 업체는 items 를 여기서 만듭니다.
+  //    손으로 두 벌 적으면 반드시 한쪽만 고치게 됩니다.
+  SUPS.forEach(sup => {
+    if (sup.groups) sup.items = sup.groups.reduce((a, g) => a.concat(g.items), []);
+  });
+
   SUPS.forEach((sup, idx) => {
     // 상태 초기화
     sup.items.forEach(item => {
@@ -436,7 +503,8 @@ function init() {
     grid.className = 'item-grid';
     grid.id = 'grid-' + sup.key;
 
-    sup.items.forEach(item => {
+    // 칩 하나를 만들어 그리드에 붙인다
+    const 칩만들기 = (item) => {
       const key  = sup.key + ':' + item;
       const chip = document.createElement('div');
       chip.className = 'item-chip';
@@ -445,13 +513,27 @@ function init() {
         `<span class="ic-name">${item}</span>` +
         `<span class="ic-qty" id="qty-${key}"></span>`;
 
-      if (sup.qty) {
+      // ⚠️ 업체가 아니라 품목으로 판정합니다 (미락처럼 섞인 곳 때문입니다)
+      if (수량품목_(sup, item)) {
         chip.addEventListener('click', () => openStepper(key, item));
       } else {
         chip.addEventListener('click', () => toggleChip(key, sup.key));
       }
       grid.appendChild(chip);
-    });
+    };
+
+    if (sup.groups) {
+      // 자리별로 작은 머리글을 끼워 넣습니다
+      sup.groups.forEach(g => {
+        const h = document.createElement('div');
+        h.className = 'grp-head';
+        h.textContent = g.label;
+        grid.appendChild(h);
+        g.items.forEach(칩만들기);
+      });
+    } else {
+      sup.items.forEach(칩만들기);
+    }
 
     section.appendChild(grid);
     allSecs.appendChild(section);
@@ -502,7 +584,9 @@ function updateInfoBar(key) {
   document.getElementById('sib-phone').textContent = CFG.PHONES[key] || '';
 
   const allBtn = document.getElementById('sib-all-btn');
-  if (!sup.qty) {
+  // ⚠️ 수량과 토글이 섞인 업체(미락)는 전체 선택을 숨깁니다.
+  //    전체 선택이 부추·대파까지 켜면 수량 없이 문자가 나가 업체가 헷갈립니다.
+  if (!sup.qty && !섞인업체_(sup)) {
     allBtn.style.display = 'block';
     const allOn = sup.items.every(item => ST[sup.key + ':' + item].on);
     allBtn.textContent = allOn ? '전체 해제' : '전체 선택';
@@ -516,7 +600,7 @@ function updateInfoBar(key) {
 // ═══════════════════════════════════════════════════
 function toggleAllActive() {
   const sup = SUPS.find(s => s.key === activeSup);
-  if (!sup || sup.qty) return;
+  if (!sup || sup.qty || 섞인업체_(sup)) return;
   const allOn = sup.items.every(item => ST[sup.key + ':' + item].on);
   sup.items.forEach(item => {
     const key = sup.key + ':' + item;
@@ -540,8 +624,9 @@ function toggleChip(key, supKey) {
   updateChip(key);
   updateBadge(supKey);
   updateBar();
-  // 전체 버튼 텍스트 동기화
-  if (supKey === activeSup && !SUPS.find(s => s.key === supKey).qty) {
+  // 전체 버튼 텍스트 동기화 (섞인 업체는 버튼 자체가 없습니다)
+  if (supKey === activeSup && !SUPS.find(s => s.key === supKey).qty
+      && !섞인업체_(SUPS.find(s => s.key === supKey))) {
     const sup   = SUPS.find(s => s.key === supKey);
     const allOn = sup.items.every(item => ST[supKey + ':' + item].on);
     document.getElementById('sib-all-btn').textContent = allOn ? '전체 해제' : '전체 선택';
