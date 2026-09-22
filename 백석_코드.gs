@@ -369,12 +369,27 @@ function getCartSheet_() {
   let sheet = ss.getSheetByName(CART_SHEET);
   if (!sheet) {
     sheet = ss.insertSheet(CART_SHEET);
-    sheet.appendRow(['시각', '영업일', '지점', '업체', '품목', '수량', '상태', '폰']);
-    sheet.getRange(1, 1, 1, 8).setFontWeight('bold').setBackground('#dbeafe');
+    sheet.appendRow(['시각', '영업일', '지점', '업체', '품목', '수량', '상태', '폰', '출처']);
+    sheet.getRange(1, 1, 1, 9).setFontWeight('bold').setBackground('#dbeafe');
     sheet.setFrozenRows(1);
   }
   return sheet;
 }
+
+// ⚠️ 「출처」가 왜 필요한가 — 2026-09-22
+//
+//    마감체크리스트의 여러 줄이 발주에서는 한 품목으로 모입니다.
+//
+//      라면용대파 · 다진대파 · 전골용대파  →  미락 대파 1개씩
+//      대파김치                          →  미락 대파 5개
+//
+//    사장님 말: 「라면용대파, 대파김치를 체크했다? = 대파 6개」
+//
+//    ⚠️ 출처가 없으면 마지막에 담은 것만 남아 5개가 됩니다.
+//       출처를 같이 적어두면 「대파:gl1=1」 「대파:gr2=5」로 따로 세어 6개가 됩니다.
+//       그리고 라면용대파만 빼면 5개로 알아서 줄어듭니다.
+//
+//    출처가 없는 것(발주앱에서 그냥 담은 것)은 '' 이고, 그것도 한 자리를 차지합니다.
 
 // ── 담기 ────────────────────────────────────────────────
 function cartAdd(data) {
@@ -402,12 +417,13 @@ function cartAdd(data) {
         return;
       }
       rows.push([now, formatDate(biz), 지점, 업체, String(it.item || ''),
-                 String(it.qty || ''), '담김', String(data.device || '')]);
+                 String(it.qty || ''), '담김', String(data.device || ''),
+                 String(it.src || '')]);
     });
 
     if (rows.length) {
       const sheet = getCartSheet_();
-      sheet.getRange(sheet.getLastRow() + 1, 1, rows.length, 8).setValues(rows);
+      sheet.getRange(sheet.getLastRow() + 1, 1, rows.length, 9).setValues(rows);
     }
     return jsonResponse({ ok: rows.length > 0, added: rows.length, rejected: 거절 });
   });
@@ -425,10 +441,11 @@ function cartRemove(data) {
 
     const rows = items.map(function (it) {
       return [now, formatDate(biz), 지점, String(it.supplier || ''),
-              String(it.item || ''), '', '뺌', String(data.device || '')];
+              String(it.item || ''), '', '뺌', String(data.device || ''),
+              String(it.src || '')];
     });
     const sheet = getCartSheet_();
-    sheet.getRange(sheet.getLastRow() + 1, 1, rows.length, 8).setValues(rows);
+    sheet.getRange(sheet.getLastRow() + 1, 1, rows.length, 9).setValues(rows);
     return jsonResponse({ ok: true, removed: rows.length });
   });
 }
@@ -446,7 +463,7 @@ function getCart(dateStr) {
 
   // 하루치만 보면 되므로 끝에서 600줄만 읽습니다
   const from = Math.max(2, last - 600 + 1);
-  const rows = sheet.getRange(from, 1, last - from + 1, 8).getValues();
+  const rows = sheet.getRange(from, 1, last - from + 1, 9).getValues();
 
   const 본것  = {};
   const 담긴것 = [];
@@ -465,7 +482,8 @@ function getCart(dateStr) {
 
     if (상태 === '보냄') { if (!보냄[업체]) 보냄[업체] = rowHHMM_(r[0]); continue; }
 
-    const 키 = 업체 + ':' + String(r[4]);
+    // ⚠️ 출처까지 넣어야 같은 품목이 여러 자리에서 와도 따로 셉니다 (대파)
+    const 키 = 업체 + ':' + String(r[4]) + ':' + String(r[8] || '');
     if (본것[키]) continue;               // 더 최근 줄을 이미 잡았습니다
     본것[키] = true;
     if (상태 !== '담김') continue;         // 마지막이 「뺌」이면 빠진 것입니다
@@ -476,6 +494,7 @@ function getCart(dateStr) {
       qty     : String(r[5] || ''),
       at      : rowHHMM_(r[0]),
       device  : String(r[7] || ''),
+      src     : String(r[8] || ''),
     });
   }
 
@@ -544,8 +563,18 @@ function sendCartDue() {
 }
 
 function sendCartFor_(업체, items, 오늘, biz) {
-  const 본문조각 = items.map(function (it) {
-    return it.qty ? (it.item + ' ' + it.qty) : it.item;
+  // ⚠️ 같은 품목을 합칩니다. 출처가 달라도 업체에게는 한 줄로 가야 합니다.
+  //    라면용대파 1 + 대파김치 5  →  「대파 6」
+  const 합 = {};
+  const 순서 = [];
+  items.forEach(function (it) {
+    if (합[it.item] === undefined) { 합[it.item] = 0; 순서.push(it.item); }
+    const n = parseFloat(it.qty);
+    합[it.item] += (isFinite(n) && n > 0) ? n : 0;
+  });
+
+  const 본문조각 = 순서.map(function (이름) {
+    return 합[이름] > 0 ? (이름 + ' ' + 합[이름]) : 이름;
   });
   const 머리 = '[백석점 발주 ' + formatDateShort_(biz) + '] ';
   const body = 머리 + 본문조각.join(', ');
@@ -564,7 +593,7 @@ function sendCartFor_(업체, items, 오늘, biz) {
   cartLock_(function () {
     const sheet = getCartSheet_();
     sheet.appendRow([new Date(), 오늘, '백석점', 업체, body, '',
-                     r.ok ? '보냄' : '보냄(실패)', 'server']);
+                     r.ok ? '보냄' : '보냄(실패)', 'server', '']);
   });
 
   logFoodOrderToSheet(오늘, [{ supplier: 업체, body: body, channel: channel,
