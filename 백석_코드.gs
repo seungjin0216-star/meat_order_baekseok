@@ -277,6 +277,19 @@ function shouldHoldUntilTuesday(now) {
 //  ① HTML 반환
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 function doGet(e) {
+  // ⚠️ 2026-09-22 — 발주 바구니를 읽어가는 길을 냈습니다.
+  //    앱이 다른 주소(깃허브)에 있어서 그냥 fetch 하면 브라우저가 막습니다.
+  //    그래서 <script> 로 불러가는 옛날 방식(JSONP)을 씁니다.
+  const p = (e && e.parameter) || {};
+  if (p.action === 'cart') {
+    const json = JSON.stringify(getCart(p.date));
+    if (p.callback) {
+      return ContentService.createTextOutput(p.callback + '(' + json + ')')
+        .setMimeType(ContentService.MimeType.JAVASCRIPT);
+    }
+    return ContentService.createTextOutput(json).setMimeType(ContentService.MimeType.JSON);
+  }
+
   return HtmlService
     .createHtmlOutputFromFile('index')
     .setTitle('백석점 발주·입고')
@@ -293,11 +306,305 @@ function doPost(e) {
     if (data.type === 'order')      return handleOrder(data);
     if (data.type === 'stock')      return handleStock(data);
     if (data.type === 'food_order') return handleFoodOrder(data); // [v2.0]
+    if (data.type === 'cart_add')    return cartAdd(data);        // [v3.0] 담기
+    if (data.type === 'cart_remove') return cartRemove(data);     // [v3.0] 빼기
     return jsonResponse({ ok: false, message: '알 수 없는 type' });
   } catch (err) {
     console.log('doPost 오류: ' + err.message);
     return jsonResponse({ ok: false, message: err.message });
   }
+}
+
+
+// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+//  ②-B 발주 바구니 [v3.0] — 2026-09-22
+//
+//  왜 만들었나
+//    그전에는 「발송」을 누르면 그 자리에서 문자가 나갔습니다.
+//    여러 명이 각자 폰에서 누르면 각각 나갑니다. 서로 모릅니다.
+//    ⚠️ 2026-09-19 원당에서 콩나물 문자가 세 번 나갔습니다.
+//
+//    이제는 담아만 둡니다. 문자는 정해진 시각에 한 번만 나갑니다.
+//    몇 번을 담아도 나가는 건 한 번입니다 — 중복이 구조적으로 불가능합니다.
+//
+//  보내는 시각 (사장님 지정 2026-09-22)
+//    미락      22:30 까지가 마감. 그래서 22:25 에 보냅니다
+//              ⚠️ 22:30 이 지나면 아예 못 담습니다. 다음날로 안 넘깁니다
+//    나머지    00:25   (자정을 넘긴 시각 — 오전 8시 전은 전날 영업분입니다)
+//    주류      ⚠️ 바구니를 안 씁니다. 재고를 세어 그 자리에서 보냅니다
+//
+//  ── 고치지 않고 쌓기만 합니다 ─────────────────────────
+//    담기도 빼기도 보냄도 전부 새 줄입니다.
+//    ① 두 폰이 동시에 눌러도 서로 덮어쓸 일이 없습니다
+//    ② 「누가 언제 무엇을」이 통째로 남습니다
+//    읽을 때 품목마다 마지막 줄만 보면 지금 상태가 됩니다.
+// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+const CART_SHEET = '발주바구니';
+
+// 업체별 보내는 시각. 여기 없는 업체는 기본(00:25)입니다.
+const CART_TIME = {
+  '미락': { hour: 22, min: 25, nextDay: false, 마감: '22:30' },
+};
+const CART_TIME_DEFAULT = { hour: 0, min: 25, nextDay: true, 마감: '00:30' };
+
+// ⚠️ 바구니를 안 쓰는 업체. 주류는 재고를 세어 그때그때 보냅니다.
+const CART_SKIP = ['주류'];
+
+function cartTime_(supplier) {
+  return CART_TIME[supplier] || CART_TIME_DEFAULT;
+}
+
+// 그 영업일에 이 업체가 나갈 시각
+function cartSendAt_(bizDate, supplier) {
+  const c = cartTime_(supplier);
+  const t = new Date(bizDate);
+  if (c.nextDay) t.setDate(t.getDate() + 1);
+  t.setHours(c.hour, c.min, 0, 0);
+  return t;
+}
+
+function getCartSheet_() {
+  const ss = SpreadsheetApp.openById(CONFIG.SPREADSHEET_ID);
+  let sheet = ss.getSheetByName(CART_SHEET);
+  if (!sheet) {
+    sheet = ss.insertSheet(CART_SHEET);
+    sheet.appendRow(['시각', '영업일', '지점', '업체', '품목', '수량', '상태', '폰']);
+    sheet.getRange(1, 1, 1, 8).setFontWeight('bold').setBackground('#dbeafe');
+    sheet.setFrozenRows(1);
+  }
+  return sheet;
+}
+
+// ── 담기 ────────────────────────────────────────────────
+function cartAdd(data) {
+  return cartLock_(function () {
+    const items = data.items || [];
+    if (!items.length) return jsonResponse({ ok: false, message: '담을 것이 없습니다' });
+
+    const now  = new Date();
+    const biz  = getBusinessDate(now);
+    const 지점  = (typeof BRANCH !== 'undefined') ? BRANCH : '백석점';
+
+    const 거절 = [];
+    const rows = [];
+
+    items.forEach(function (it) {
+      const 업체 = String(it.supplier || '');
+
+      if (CART_SKIP.indexOf(업체) >= 0) {
+        거절.push(업체 + ' 은 바구니를 쓰지 않습니다');
+        return;
+      }
+      // ⚠️ 보낼 시각이 지났으면 안 받습니다. 받아두면 영영 안 나갑니다.
+      if (cartSendAt_(biz, 업체).getTime() <= now.getTime()) {
+        거절.push(업체 + ' 은 ' + cartTime_(업체).마감 + ' 에 마감됐습니다');
+        return;
+      }
+      rows.push([now, formatDate(biz), 지점, 업체, String(it.item || ''),
+                 String(it.qty || ''), '담김', String(data.device || '')]);
+    });
+
+    if (rows.length) {
+      const sheet = getCartSheet_();
+      sheet.getRange(sheet.getLastRow() + 1, 1, rows.length, 8).setValues(rows);
+    }
+    return jsonResponse({ ok: rows.length > 0, added: rows.length, rejected: 거절 });
+  });
+}
+
+// ── 빼기 ────────────────────────────────────────────────
+function cartRemove(data) {
+  return cartLock_(function () {
+    const items = data.items || [];
+    if (!items.length) return jsonResponse({ ok: false, message: '뺄 것이 없습니다' });
+
+    const now = new Date();
+    const biz = getBusinessDate(now);
+    const 지점 = (typeof BRANCH !== 'undefined') ? BRANCH : '백석점';
+
+    const rows = items.map(function (it) {
+      return [now, formatDate(biz), 지점, String(it.supplier || ''),
+              String(it.item || ''), '', '뺌', String(data.device || '')];
+    });
+    const sheet = getCartSheet_();
+    sheet.getRange(sheet.getLastRow() + 1, 1, rows.length, 8).setValues(rows);
+    return jsonResponse({ ok: true, removed: rows.length });
+  });
+}
+
+// ── 지금 담겨 있는 것 ────────────────────────────────────
+//    품목마다 마지막 줄만 봅니다. 마지막이 「담김」이면 담긴 것입니다.
+function getCart(dateStr) {
+  const now  = new Date();
+  const biz  = getBusinessDate(now);
+  const date = dateStr || formatDate(biz);
+
+  const sheet = getCartSheet_();
+  const last  = sheet.getLastRow();
+  if (last < 2) return { ok: true, date: date, items: [], sent: {} };
+
+  // 하루치만 보면 되므로 끝에서 600줄만 읽습니다
+  const from = Math.max(2, last - 600 + 1);
+  const rows = sheet.getRange(from, 1, last - from + 1, 8).getValues();
+
+  const 본것  = {};
+  const 담긴것 = [];
+  const 보냄  = {};
+
+  for (let i = rows.length - 1; i >= 0; i--) {
+    const r = rows[i];
+    // ⚠️ 영업일은 '26.09.22(화)' 같은 글자로 저장돼 있습니다.
+    //    이걸 다시 날짜로 바꾸려 하면 Invalid Date 가 되어 하루치가 통째로 안 잡힙니다.
+    //    시트가 날짜로 인식해 버린 줄만 formatDate 를 태웁니다.
+    const 줄날짜 = (r[1] instanceof Date) ? formatDate(r[1]) : String(r[1]);
+    if (줄날짜 !== date) continue;
+
+    const 업체 = String(r[3]);
+    const 상태 = String(r[6]);
+
+    if (상태 === '보냄') { if (!보냄[업체]) 보냄[업체] = rowHHMM_(r[0]); continue; }
+
+    const 키 = 업체 + ':' + String(r[4]);
+    if (본것[키]) continue;               // 더 최근 줄을 이미 잡았습니다
+    본것[키] = true;
+    if (상태 !== '담김') continue;         // 마지막이 「뺌」이면 빠진 것입니다
+
+    담긴것.push({
+      supplier: 업체,
+      item    : String(r[4]),
+      qty     : String(r[5] || ''),
+      at      : rowHHMM_(r[0]),
+      device  : String(r[7] || ''),
+    });
+  }
+
+  담긴것.reverse();   // 담은 순서대로
+  return { ok: true, date: date, items: 담긴것, sent: 보냄, deadlines: cartDeadlines_(biz) };
+}
+
+function cartDeadlines_(biz) {
+  const out = { '_기본': CART_TIME_DEFAULT.마감 };
+  Object.keys(CART_TIME).forEach(function (k) { out[k] = CART_TIME[k].마감; });
+  return out;
+}
+
+function rowHHMM_(v) {
+  return v instanceof Date ? Utilities.formatDate(v, 'Asia/Seoul', 'HH:mm') : String(v || '');
+}
+
+function cartLock_(fn) {
+  const lock = LockService.getScriptLock();
+  lock.waitLock(20000);
+  try { return fn(); } finally { lock.releaseLock(); }
+}
+
+
+// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+//  ②-C 바구니 보내기 — 5분마다 도는 트리거가 부릅니다
+//
+//  ⚠️ 왜 「매일 22:25 트리거」가 아니라 5분마다인가
+//     구글의 시간 트리거는 정확하지 않습니다. 22시로 걸면 22~23시 사이
+//     아무 때나 돕니다. 미락은 22:30 이 마감이라 그러면 늦습니다.
+//     5분마다 돌면서 「보낼 시각이 지났나」만 보면 오차가 5분 안입니다.
+//
+//  ⚠️ 그리고 한 번 걸어두면 계속 돕니다. 일회성 트리거는 만들다 실패하면
+//     그날 발주가 통째로 빠집니다. 중복보다 누락이 훨씬 아픕니다.
+// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+// ★ 딱 한 번 실행하세요. 5분마다 도는 트리거를 겁니다.
+function 바구니트리거걸기() {
+  ScriptApp.getProjectTriggers().forEach(function (t) {
+    if (t.getHandlerFunction() === 'sendCartDue') ScriptApp.deleteTrigger(t);
+  });
+  ScriptApp.newTrigger('sendCartDue').timeBased().everyMinutes(5).create();
+  console.log('✅ 5분마다 바구니를 확인하는 트리거를 걸었습니다');
+}
+
+function sendCartDue() {
+  const now = new Date();
+  const biz = getBusinessDate(now);
+  const 오늘 = formatDate(biz);
+  const cart = getCart(오늘);
+
+  if (!cart.items.length) return;   // 담긴 게 없으면 조용히 끝냅니다
+
+  // 업체별로 묶습니다
+  const 업체별 = {};
+  cart.items.forEach(function (it) {
+    if (!업체별[it.supplier]) 업체별[it.supplier] = [];
+    업체별[it.supplier].push(it);
+  });
+
+  Object.keys(업체별).forEach(function (업체) {
+    if (cart.sent[업체]) return;                                   // 이미 보냈습니다
+    if (cartSendAt_(biz, 업체).getTime() > now.getTime()) return;  // 아직 시간이 안 됐습니다
+    sendCartFor_(업체, 업체별[업체], 오늘, biz);
+  });
+}
+
+function sendCartFor_(업체, items, 오늘, biz) {
+  const 본문조각 = items.map(function (it) {
+    return it.qty ? (it.item + ' ' + it.qty) : it.item;
+  });
+  const 머리 = '[백석점 발주 ' + formatDateShort_(biz) + '] ';
+  const body = 머리 + 본문조각.join(', ');
+  const channel = getByteLen(body) > CONFIG.FOOD.SMS_MAX_BYTES ? 'LMS' : 'SMS';
+  const phone = String(CONFIG.FOOD.PHONES[업체] || '').replace(/-/g, '');
+
+  if (!phone) {
+    alertFailure('바구니 발송 실패 — 전화번호 없음', 업체 + ' / ' + body, '전화번호가 비어 있습니다');
+    return;
+  }
+
+  const r = sendFoodSms(phone, body, channel);
+
+  // ⚠️ 보냈다는 표시를 먼저 남깁니다. 실패했어도 남깁니다.
+  //    안 남기면 5분 뒤에 또 보냅니다 — 그게 바로 막으려던 일입니다.
+  cartLock_(function () {
+    const sheet = getCartSheet_();
+    sheet.appendRow([new Date(), 오늘, '백석점', 업체, body, '',
+                     r.ok ? '보냄' : '보냄(실패)', 'server']);
+  });
+
+  logFoodOrderToSheet(오늘, [{ supplier: 업체, body: body, channel: channel,
+                              items: 본문조각 }], false);
+
+  if (!r.ok) {
+    alertFailure('바구니 발송 실패 (' + 업체 + ')', body, r.message || '알 수 없음');
+  } else {
+    console.log('바구니 발송 완료: ' + 업체 + ' / ' + body);
+  }
+}
+
+function formatDateShort_(d) {
+  return Utilities.formatDate(d, 'Asia/Seoul', 'M/d') +
+         '(' + ['일','월','화','수','목','금','토'][d.getDay()] + ')';
+}
+
+// ── 안 나간 게 남아 있으면 알린다 ────────────────────────
+//    ⚠️ 예약 발송의 유일한 약점이 「조용한 누락」입니다.
+//       트리거가 안 돌면 아무도 모르게 발주가 빠집니다.
+//       그래서 아침에 한 번, 어제 것이 다 나갔는지 확인합니다.
+function 바구니누락확인() {
+  const now  = new Date();
+  const 어제  = new Date(getBusinessDate(now));
+  어제.setDate(어제.getDate() - 1);
+  const cart = getCart(formatDate(어제));
+
+  const 안나간업체 = {};
+  cart.items.forEach(function (it) {
+    if (!cart.sent[it.supplier]) 안나간업체[it.supplier] = true;
+  });
+
+  const 목록 = Object.keys(안나간업체);
+  if (!목록.length) return;
+
+  alertFailure(
+    '⚠️ 어제 발주가 안 나갔습니다 (' + 목록.length + '곳)',
+    formatDate(어제) + '\n\n' + 목록.join(' · ') + '\n\n담겨는 있는데 문자가 안 나갔습니다.',
+    '보낼 시각에 트리거가 안 돈 것으로 보입니다. 지금 업체에 직접 연락하세요.'
+  );
 }
 
 

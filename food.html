@@ -120,6 +120,17 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Apple SD Gothic Neo','Malgun 
 .pc-footer{padding:9px 16px;display:flex;align-items:center;justify-content:space-between}
 .pc-len{font-size:11px;color:#8e8e93}
 .pc-to{font-size:11px;color:#c7c7cc}
+/* 담긴 발주 (2026-09-22) */
+#cart-box{margin-top:22px;background:#eff6ff;border:1.5px solid #bfdbfe;border-radius:16px;padding:14px}
+.cart-title{font-size:14px;font-weight:800;color:#1d4ed8;margin-bottom:10px;display:flex;justify-content:space-between}
+.cart-title span{font-size:12px;font-weight:700;color:#3b82f6}
+.cart-sup{background:#fff;border-radius:12px;padding:10px 12px;margin-bottom:8px}
+.cart-sup-h{display:flex;justify-content:space-between;align-items:center;font-size:13px;font-weight:700;margin-bottom:5px}
+.cart-when{font-size:11px;font-weight:600;color:#8e8e93}
+.cart-item{display:flex;justify-content:space-between;align-items:center;font-size:13px;color:#3a3a3c;padding:3px 0}
+.cart-x{width:24px;height:24px;line-height:22px;text-align:center;border-radius:7px;background:#f2f2f7;color:#8e8e93;font-size:15px;cursor:pointer;flex:none}
+.cart-x:active{background:#fee2e2;color:#dc2626}
+.cart-foot{font-size:11.5px;color:#1e40af;text-align:center;margin-top:4px;line-height:1.5}
 .submit-btn{width:100%;padding:18px;border-radius:16px;font-size:17px;font-weight:700;border:none;cursor:pointer;margin-top:8px;background:#7c3aed;color:#fff}
 .submit-btn:active{opacity:.8}
 
@@ -199,6 +210,9 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Apple SD Gothic Neo','Malgun 
 
     <!-- 업체별 아이템 섹션 (하나만 표시) -->
     <div id="all-sections"></div>
+
+    <!-- 담긴 발주 — 다른 폰이 담은 것도 여기 보입니다 (2026-09-22) -->
+    <div id="cart-box" style="display:none"></div>
   </div>
 
   <div class="bottom-bar">
@@ -228,7 +242,7 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Apple SD Gothic Neo','Malgun 
       🕗 <strong>화요일 20:30 자동 발송</strong> — 지금은 저장만 됩니다
     </div>
     <div id="preview-cards"></div>
-    <button class="submit-btn" id="submit-btn" onclick="submitAll()">📨 전체 발송하기</button>
+    <button class="submit-btn" id="submit-btn" onclick="담기()">📥 발주 담기</button>
   </div>
 </div>
 
@@ -551,6 +565,17 @@ function init() {
 
   updateInfoBar(activeSup);
   updateBar();
+
+  // ── 바구니 (2026-09-22) ────────────────────────────
+  //    ⚠️ 다른 폰이 담은 것을 먼저 받아옵니다. 그래야 같은 걸 또 안 담습니다.
+  탭잠금_();
+  바구니새로고침_();
+  setInterval(function () {
+    if (document.visibilityState === 'visible') { 바구니새로고침_(); }
+  }, 30000);
+  document.addEventListener('visibilitychange', function () {
+    if (document.visibilityState === 'visible') 바구니새로고침_();
+  });
 }
 
 // ═══════════════════════════════════════════════════
@@ -859,8 +884,10 @@ function goPreview() {
 
   const delayed = msgs.some(m => m.delayed);
   document.getElementById('preview-delay-notice').style.display = delayed ? 'block' : 'none';
-  document.getElementById('submit-btn').textContent = delayed
-    ? '📋 발주 저장 (화요일 20:30 자동발송)' : '📨 전체 발송하기';
+  // ⚠️ 주류만 고른 경우에는 바로 나갑니다 (바구니를 안 쓰는 업체)
+  const 주류만 = msgs.every(m => 바구니제외.indexOf(m.supplier) >= 0);
+  document.getElementById('submit-btn').textContent = 주류만
+    ? '📨 지금 보내기' : '📥 발주 담기';
 
   const cards = document.getElementById('preview-cards');
   cards.innerHTML = '';
@@ -890,7 +917,222 @@ function esc(s) {
 }
 
 // ═══════════════════════════════════════════════════
-// 발송
+// 발주 바구니 [v3.0] — 2026-09-22
+//
+//  그전에는 「발송」을 누르면 그 자리에서 문자가 나갔습니다.
+//  여러 명이 각자 폰에서 누르면 각각 나갑니다. 서로 모릅니다.
+//  ⚠️ 2026-09-19 원당에서 콩나물 문자가 세 번 나갔습니다.
+//
+//  이제는 담아만 둡니다. 문자는 정해진 시각에 서버가 한 번만 보냅니다.
+//     미락    22:30 마감 (그 전에 나갑니다)
+//     나머지  00:30
+//     주류    ⚠️ 바구니를 안 씁니다 — 재고를 세어 그때그때 보냅니다
+//
+//  ⚠️ 몇 번을 담아도 나가는 건 한 번입니다. 중복이 구조적으로 불가능합니다.
+// ═══════════════════════════════════════════════════
+
+const 바구니제외 = ['주류'];
+
+// ⚠️ 서버와 글자 하나까지 같아야 합니다.
+//    앱이 22:30 까지 받는데 서버가 22:25 에 거절하면,
+//    직원은 담았다고 생각하는데 실제로는 안 담깁니다 — 발주가 통째로 빠집니다.
+//
+//    미락은 22:30 이 업체 마감이라 5분 앞선 22:25 에 보냅니다.
+//    그래서 담는 것도 22:25 까지입니다.
+const 마감시각 = { '미락': { h: 22, m: 25 } };
+const 마감기본 = { h: 24, m: 25 };   // 자정 25분 = 오늘 24:25 로 셉니다
+
+let 바구니 = [];      // [{supplier,item,qty,at,device}]
+let 보낸업체표 = {};   // { 미락: '22:27' }
+
+// 이 폰 번호 — 누가 담았는지 남기려고 씁니다 (마감체크리스트와 같은 방식)
+const 폰번호 = (function () {
+  try {
+    let id = localStorage.getItem('phoneId');
+    if (!id) { id = Math.random().toString(36).slice(2, 6); localStorage.setItem('phoneId', id); }
+    return id;
+  } catch (e) { return 'temp'; }
+})();
+
+// 영업일 기준 지금이 몇 시인가 (오전 8시 전은 전날 밤으로 셉니다)
+function 영업시각_() {
+  const d = new Date(new Date().toLocaleString('en-US', { timeZone: 'Asia/Seoul' }));
+  const h = d.getHours();
+  return (h < 8 ? h + 24 : h) * 60 + d.getMinutes();
+}
+
+function 마감지났나_(업체) {
+  const c = 마감시각[업체] || 마감기본;
+  return 영업시각_() >= c.h * 60 + c.m;
+}
+
+function 마감글_(업체) {
+  const c = 마감시각[업체] || 마감기본;
+  return String(c.h % 24).padStart(2, '0') + ':' + String(c.m).padStart(2, '0');
+}
+
+// ── 서버에서 담긴 것 읽어오기 ────────────────────────
+//    ⚠️ 다른 폰이 담은 것도 여기 들어옵니다. 그래야 또 안 담습니다.
+function 바구니읽기_() {
+  return new Promise(function (resolve) {
+    const cb = 'cb_' + Date.now() + '_' + Math.floor(Math.random() * 1e6);
+    const t  = setTimeout(function () { done(); resolve(null); }, 12000);
+    function done() { clearTimeout(t); delete window[cb]; if (s.parentNode) s.parentNode.removeChild(s); }
+    window[cb] = function (d) { done(); resolve(d); };
+    const s = document.createElement('script');
+    s.src = CFG.GAS_URL + '?action=cart&callback=' + cb;
+    s.onerror = function () { done(); resolve(null); };
+    document.body.appendChild(s);
+  });
+}
+
+function 바구니새로고침_() {
+  return 바구니읽기_().then(function (res) {
+    if (!res || !res.ok) return;
+    바구니   = res.items || [];
+    보낸업체표 = res.sent || {};
+    바구니그리기_();
+    탭잠금_();
+  });
+}
+
+// ── 담기 ────────────────────────────────────────────
+async function 담기() {
+  const msgs = buildMsgs();
+  if (!msgs.length) { alert('담을 것이 없습니다.'); return; }
+
+  // CC 는 같은 내용이 한 번 더 가는 것이므로 바구니에는 한 번만 담습니다
+  const 본것 = {};
+  const items = [];
+  const 주류것 = [];
+
+  msgs.forEach(function (m) {
+    if (본것[m.supplier]) return;
+    본것[m.supplier] = true;
+    const sup = SUPS.find(function (s) { return s.key === m.supplier; });
+    const 담을것 = sup.items.filter(function (i) { return ST[sup.key + ':' + i].on; })
+      .map(function (i) { return { supplier: sup.key, item: i, qty: ST[sup.key + ':' + i].qty || '' }; });
+    if (바구니제외.indexOf(m.supplier) >= 0) 주류것.push(m);
+    else items.push.apply(items, 담을것);
+  });
+
+  // ⚠️ 주류는 바구니를 안 씁니다. 지금은 예전처럼 바로 보냅니다.
+  if (주류것.length && !items.length) return submitAll();
+
+  showLoading('발주 담는 중...');
+  try {
+    await fetch(CFG.GAS_URL, {
+      method: 'POST',
+      headers: { 'Content-Type': 'text/plain;charset=utf-8' },
+      body: JSON.stringify({ type: 'cart_add', device: 폰번호, items: items }),
+    });
+  } catch (e) {
+    // ⚠️ 답장을 못 받아도 서버는 담았을 수 있습니다.
+    //    그래서 「실패」라고 하지 않고, 아래에서 다시 읽어 확인합니다.
+  }
+  hideLoading();
+
+  await 바구니새로고침_();
+
+  // 담긴 게 확인되면 체크를 비웁니다
+  const 담긴업체 = {};
+  바구니.forEach(function (b) { 담긴업체[b.supplier] = true; });
+  보낸업체비우기_담기(Object.keys(담긴업체));
+
+  if (주류것.length) await submitAll();   // 주류가 섞여 있으면 그것만 따로 보냅니다
+  else 담기완료화면_();
+}
+
+// 담긴 업체의 체크만 비웁니다 (안 담긴 업체는 그대로 둬야 다시 담을 수 있습니다)
+function 보낸업체비우기_담기(supKeys) {
+  보낸업체비우기(supKeys);
+}
+
+// ── 빼기 ────────────────────────────────────────────
+async function 바구니빼기(supplier, item) {
+  if (보낸업체표[supplier]) { alert('이미 나간 발주는 뺄 수 없습니다.'); return; }
+  바구니 = 바구니.filter(function (b) { return !(b.supplier === supplier && b.item === item); });
+  바구니그리기_();      // 화면 먼저
+  try {
+    await fetch(CFG.GAS_URL, {
+      method: 'POST',
+      headers: { 'Content-Type': 'text/plain;charset=utf-8' },
+      body: JSON.stringify({ type: 'cart_remove', device: 폰번호,
+                             items: [{ supplier: supplier, item: item }] }),
+    });
+  } catch (e) {}
+  바구니새로고침_();
+}
+
+// ── 마감된 업체 탭 잠그기 ────────────────────────────
+function 탭잠금_() {
+  SUPS.forEach(function (sup) {
+    const tab = document.getElementById('stab-' + sup.key);
+    if (!tab) return;
+    if (바구니제외.indexOf(sup.key) >= 0) return;     // 주류는 요일로만 잠깁니다
+    const 잠김 = 마감지났나_(sup.key);
+    tab.classList.toggle('disabled', 잠김);
+    if (잠김 && tab.textContent.indexOf('🔒') < 0) {
+      tab.innerHTML = tab.innerHTML.replace(sup.key, sup.key + ' 🔒');
+    }
+  });
+}
+
+// ── 담긴 것 그리기 ──────────────────────────────────
+function 바구니그리기_() {
+  const box = document.getElementById('cart-box');
+  if (!box) return;
+
+  if (!바구니.length) { box.style.display = 'none'; return; }
+  box.style.display = 'block';
+
+  const 업체별 = {};
+  바구니.forEach(function (b) {
+    if (!업체별[b.supplier]) 업체별[b.supplier] = [];
+    업체별[b.supplier].push(b);
+  });
+
+  box.innerHTML =
+    '<div class="cart-title">📥 담긴 발주 <span>' + 바구니.length + '건</span></div>' +
+    Object.keys(업체별).map(function (업체) {
+      const list = 업체별[업체];
+      const sup  = SUPS.find(function (s) { return s.key === 업체; });
+      const 보냄 = 보낸업체표[업체];
+      const 누가 = list[0].device === 폰번호 ? '나' : list[0].device;
+      return '<div class="cart-sup">' +
+        '<div class="cart-sup-h">' +
+          '<span>' + (sup ? sup.emoji : '') + ' ' + 업체 + '</span>' +
+          '<span class="cart-when">' +
+            (보냄 ? '✅ ' + 보냄 + ' 발송' : list[0].at + ' · ' + 누가) +
+          '</span>' +
+        '</div>' +
+        list.map(function (b) {
+          return '<div class="cart-item">' +
+            '<span>' + b.item + (b.qty ? ' ' + b.qty : '') + '</span>' +
+            (보냄 ? '' : '<span class="cart-x" onclick="바구니빼기(\'' +
+              업체 + '\',\'' + b.item + '\')">×</span>') +
+            '</div>';
+        }).join('') +
+      '</div>';
+    }).join('') +
+    '<div class="cart-foot">⏰ 미락 22:25 · 나머지 00:25 에 자동으로 나갑니다</div>';
+}
+
+function 담기완료화면_() {
+  document.getElementById('done-icon').textContent  = '📥';
+  document.getElementById('done-title').textContent = '담았습니다';
+  document.getElementById('done-sub').textContent   =
+    '문자는 아직 안 나갔습니다.\n미락 22:25 · 나머지 00:25 에 한 번만 나갑니다';
+  document.getElementById('done-result').innerHTML  = 바구니.map(function (b) {
+    return '<div class="dr-row"><span class="dr-supplier">' + b.supplier + ' · ' + b.item +
+           (b.qty ? ' ' + b.qty : '') + '</span><span class="dr-status st-dev">담김</span></div>';
+  }).join('');
+  showScreen('s-done');
+}
+
+
+// ═══════════════════════════════════════════════════
+// 발송 (주류 전용 — 바구니를 안 쓰는 업체)
 // ═══════════════════════════════════════════════════
 async function submitAll() {
   const msgs    = buildMsgs();
