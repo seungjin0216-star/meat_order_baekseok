@@ -120,6 +120,34 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Apple SD Gothic Neo','Malgun 
 .pc-footer{padding:9px 16px;display:flex;align-items:center;justify-content:space-between}
 .pc-len{font-size:11px;color:#8e8e93}
 .pc-to{font-size:11px;color:#c7c7cc}
+/* 재고 다이얼 — index.html 에서 그대로 가져왔습니다 (2026-09-22) */
+.dial-ov{display:none;position:fixed;inset:0;background:rgba(0,0,0,.5);z-index:500;align-items:flex-end;justify-content:center}
+.dial-ov.show{display:flex}
+.dial-sheet{background:#fff;border-radius:24px 24px 0 0;padding:20px 16px 40px;width:100%}
+.dial-lbl{font-size:13px;color:#8e8e93;margin-bottom:6px;padding:0 4px}
+.dial-disp{font-size:52px;font-weight:700;text-align:right;padding:8px 8px 14px;border-bottom:1.5px solid #e0e0e0;margin-bottom:14px;min-height:80px;display:flex;align-items:center;justify-content:flex-end;gap:8px}
+.d-num{color:#1c1c1e}
+.d-hint{font-size:18px;color:#c7c7cc;font-weight:400}
+.d-unit{font-size:20px;color:#8e8e93;font-weight:400}
+.dk-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:10px}
+.dk{height:64px;border-radius:14px;background:#f5f5f7;border:none;font-size:24px;font-weight:600;color:#1c1c1e;display:flex;align-items:center;justify-content:center;cursor:pointer;user-select:none;transition:background .08s}
+.dk:active{background:#e0e0e0}
+.dk-sp{background:#e8e8ed;font-size:18px}
+.dk-ok{color:#fff;font-size:17px;font-weight:700;grid-column:1/-1;height:58px;border-radius:16px}
+.dk-ok-o{background:#7c3aed}
+.dk-ok-s{background:#059669}
+/* 재고 입력 칩 */
+.item-chip.stock{flex-direction:column;align-items:flex-start;gap:2px;padding:8px 12px;min-width:92px}
+.ic-left{font-size:11px;font-weight:700;color:#8e8e93}
+.ic-left b{color:#1c1c1e}
+.item-chip.stock.on{background:#fff7ed;border-color:#f59e0b}
+.item-chip.stock.on .ic-name{color:#9a3412}
+.ic-order{font-size:12px;font-weight:800;color:#c2410c}
+.juryu-note{background:#fff7ed;border:1.5px solid #fed7aa;border-radius:12px;padding:11px 13px;margin-bottom:12px;font-size:12.5px;color:#9a3412;line-height:1.6}
+.juryu-sum{display:flex;justify-content:space-between;align-items:center;background:#fff;border-radius:12px;padding:11px 13px;margin-top:12px;font-size:13px;font-weight:700}
+.juryu-sum.bad{background:#fef2f2;color:#b91c1c}
+.juryu-sum.ok{background:#f0fdf4;color:#15803d}
+
 /* 담긴 발주 (2026-09-22) */
 #cart-box{margin-top:22px;background:#eff6ff;border:1.5px solid #bfdbfe;border-radius:16px;padding:14px}
 .cart-title{font-size:14px;font-weight:800;color:#1d4ed8;margin-bottom:10px;display:flex;justify-content:space-between}
@@ -280,6 +308,25 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Apple SD Gothic Neo','Malgun 
   </div>
 </div>
 
+<!-- 다이얼 -->
+<div class="dial-ov" id="dial-ov" onclick="dialClose(event)">
+  <div class="dial-sheet" onclick="event.stopPropagation()">
+    <div class="dial-lbl" id="dial-lbl"></div>
+    <div class="dial-disp" id="dial-disp">
+      <span class="d-hint">숫자 입력</span><span class="d-unit">보</span>
+    </div>
+    <div class="dk-grid">
+      <div class="dk" onclick="dk('1')">1</div><div class="dk" onclick="dk('2')">2</div><div class="dk" onclick="dk('3')">3</div>
+      <div class="dk" onclick="dk('4')">4</div><div class="dk" onclick="dk('5')">5</div><div class="dk" onclick="dk('6')">6</div>
+      <div class="dk" onclick="dk('7')">7</div><div class="dk" onclick="dk('8')">8</div><div class="dk" onclick="dk('9')">9</div>
+      <div class="dk dk-sp" id="dk-dot" onclick="dk('.')"> · </div>
+      <div class="dk" onclick="dk('0')">0</div>
+      <div class="dk dk-sp" onclick="dkDel()">⌫</div>
+      <div class="dk dk-ok" id="dk-ok" onclick="dkOk()">확인</div>
+    </div>
+  </div>
+</div>
+
 <!-- 로딩 -->
 <div class="loading-ov" id="loading-ov">
   <div class="spinner"></div>
@@ -359,15 +406,131 @@ const SUPS = [
 
   { key:'사장님',   emoji:'👤', qty:false, items:['국수소스','파장소스','식세기세제','감미','다대기','파랑봉지','흰봉지','부추봉지'] },
   { key:'배달관련', emoji:'🛵', qty:false, items:['배달봉투','사각용기 소','사각용기 중','반찬용기','기름장용기','전골용기','수저'] },
-  { key:'주류',     emoji:'🍶', qty:true,  items:['참이슬후래쉬','처음처럼','새로','진로','참이슬빨뚜','카스','테라','켈리','일품진로','복분자','청하','매화수'] },
+  // ⚠️ 2026-09-22 — 주류는 「몇 개 시킬까」가 아니라 「몇 개 남았나」를 적습니다.
+  //
+  //    사장님 말: 「남은 재고를 넣어서 계산하는 방식으로 하자」
+  //    직원이 채우고 남은 박스를 세기만 하면 앱이 시킬 개수를 뽑아줍니다.
+  //    ⚠️ 주류는 바구니를 안 씁니다 — 재고를 세어 그 자리에서 보냅니다.
+  //
+  //    목표     있어야 할 개수. 여기서 남은 걸 뺀 만큼 시킵니다
+  //    체크만   일품진로·복분자·매화수 는 계산하지 않고 그냥 고릅니다
+  //             (자주 안 나가서 목표를 잡는 게 뜻이 없습니다)
+  { key:'주류',     emoji:'🍶', qty:true, 재고식:true,
+    목표: { '참이슬후래쉬':3, '카스':3, '처음처럼':2,
+            '새로':1, '진로':1, '참이슬빨뚜':1, '테라':1, '켈리':1, '청하':1 },
+    체크만: ['일품진로','복분자','매화수'],
+    items:['참이슬후래쉬','처음처럼','새로','진로','참이슬빨뚜','카스','테라','켈리','일품진로','복분자','청하','매화수'] },
   { key:'음료수',   emoji:'🥤', qty:true,  items:['콜라','사이다','제로콜라','파인애플','웰치스포도'] },
 ];
 
 // ── 품목 하나가 수량 입력인가 ──────────────────────────
 //    ⚠️ 이제 업체가 아니라 품목마다 정해집니다.
 function 수량품목_(sup, item) {
+  if (재고품목_(sup, item)) return false;       // 재고식은 다이얼로 따로 받습니다
+  if (sup.체크만 && sup.체크만.indexOf(item) >= 0) return false;
   if (sup.qtyOnly) return sup.qtyOnly.indexOf(item) >= 0;
   return !!sup.qty;
+}
+
+// ── 재고를 적어야 하는 품목인가 ────────────────────────
+function 재고품목_(sup, item) {
+  return !!(sup.재고식 && sup.목표 && sup.목표[item] !== undefined);
+}
+
+// ══════════════════════════════════════════════════════
+//  주류 — 남은 재고에서 시킬 개수를 뽑습니다 (2026-09-22)
+//
+//  사장님이 정한 규칙
+//    ① 0.5 미만은 0 으로 본다. 0.5 이상은 1 로 올린다  → 반올림입니다
+//    ② 시킬 개수 = 목표 − 반올림한 재고  (0 밑으로는 안 내려갑니다)
+//    ③ 전체 합계가 3개 미만이면 발주하지 않는다
+//
+//  ⚠️ 재고를 안 적은 품목은 아예 안 시킵니다.
+//     0 으로 봤다가는 적지도 않은 술이 목표만큼 배달됩니다.
+// ══════════════════════════════════════════════════════
+
+function 재고정리_(v) {
+  const n = parseFloat(v);
+  if (!isFinite(n) || n < 0) return 0;
+  return Math.round(n);          // 0.4→0 · 0.5→1 · 1.4→1 · 1.5→2
+}
+
+function 주문수_(sup, item) {
+  const st = ST[sup.key + ':' + item];
+  if (!st || !st.on) return 0;
+  if (!재고품목_(sup, item)) return 1;            // 체크만 하는 품목은 1개로 셉니다
+  if (st.stock === '' || st.stock === undefined) return 0;   // 재고를 안 적었습니다
+  return Math.max(0, sup.목표[item] - 재고정리_(st.stock));
+}
+
+function 주류합계_(sup) {
+  return sup.items.reduce(function (a, i) { return a + 주문수_(sup, i); }, 0);
+}
+
+const 주류최소 = 3;
+
+// ── 재고 다이얼 ─────────────────────────────────────────
+//    고기 발주에서 곱창 수를 적는 것과 같은 키패드입니다.
+//    ⚠️ 「 · 」을 먼저 눌러도 됩니다 — 0.3 처럼 알아서 붙습니다.
+let 재고키 = null, 재고버퍼 = '', 재고찍음 = false, 재고품 = '';
+
+function 재고열기_(key, item, sup) {
+  재고키 = key; 재고품 = item;
+  const 지금 = ST[key].stock;
+  재고버퍼 = (지금 === undefined || 지금 === '') ? '' : String(지금);
+  재고찍음 = 재고버퍼 !== '';
+  document.getElementById('dial-lbl').textContent =
+    item + ' — 채우고 남은 개수 (목표 ' + sup.목표[item] + ')';
+  const dot = document.getElementById('dk-dot');
+  dot.style.opacity = '1'; dot.style.pointerEvents = '';
+  document.getElementById('dk-ok').className = 'dk dk-ok dk-ok-s';
+  재고그리기_();
+  document.getElementById('dial-ov').classList.add('show');
+}
+
+function 재고그리기_() {
+  document.getElementById('dial-disp').innerHTML = 재고찍음
+    ? `<span class="d-num">${재고버퍼}</span><span class="d-unit">개 남음</span>`
+    : '<span class="d-hint">남은 개수</span><span class="d-unit">개 남음</span>';
+}
+
+function dk(k) {
+  if (k === '.' && 재고버퍼.includes('.')) return;
+  if (!재고찍음 && k === '.')            재고버퍼 = '0.';
+  else if (!재고찍음)                    재고버퍼 = k;
+  else if (재고버퍼 === '0' && k !== '.') 재고버퍼 = k;
+  else                                  재고버퍼 += k;
+  재고찍음 = true;
+  재고그리기_();
+}
+
+function dkDel() {
+  재고버퍼 = 재고버퍼.slice(0, -1);
+  재고찍음 = 재고버퍼 !== '';
+  재고그리기_();
+}
+
+function dkOk() {
+  if (재고키) {
+    const sup = SUPS.find(function (s) { return s.key === 재고키.split(':')[0]; });
+    ST[재고키].stock = 재고찍음 ? 재고버퍼 : '';
+    // ⚠️ 시킬 게 0개면 체크도 풀어야 합니다. 안 그러면 「부추」처럼 이름만 문자에 들어갑니다.
+    const 시킴 = 재고찍음 ? Math.max(0, sup.목표[재고품] - 재고정리_(재고버퍼)) : 0;
+    ST[재고키].on  = 시킴 > 0;
+    ST[재고키].qty = 시킴 > 0 ? String(시킴) : '';
+    저장();
+    updateChip(재고키);
+    updateBadge(재고키.split(':')[0]);
+    주류합계그리기_();
+    updateBar();
+  }
+  dialClose();
+}
+
+function dialClose(e) {
+  if (e && e.target && e.target.id !== 'dial-ov') return;
+  document.getElementById('dial-ov').classList.remove('show');
+  재고키 = null;
 }
 
 // ── 이 업체가 수량과 토글이 섞여 있나 ──────────────────
@@ -414,7 +577,10 @@ function 저장() {
   try {
     const 체크 = {};
     Object.keys(ST).forEach(k => {
-      if (ST[k] && ST[k].on) 체크[k] = ST[k];   // 체크된 것만 담는다
+      // ⚠️ 재고를 적었는데 시킬 게 0개인 것도 담아야 합니다 (주류).
+      //    안 그러면 「참이슬 3개 남음」을 적어두고 앱을 껐다 켜면 사라집니다.
+      //    직원은 처음부터 다시 세러 가야 합니다.
+      if (ST[k] && (ST[k].on || ST[k].stock)) 체크[k] = ST[k];
     });
     localStorage.setItem(SAVE_KEY, JSON.stringify({
       date: 오늘키(),
@@ -460,7 +626,7 @@ function 보낸업체비우기(supKeys) {
     if (supKeys.indexOf(sup.key) < 0) return;
     sup.items.forEach(item => {
       const key = sup.key + ':' + item;
-      ST[key] = { on: false, qty: '' };
+      ST[key] = { on: false, qty: '', stock: '' };
       updateChip(key);
     });
     updateBadge(sup.key);
@@ -493,7 +659,7 @@ function init() {
   SUPS.forEach((sup, idx) => {
     // 상태 초기화
     sup.items.forEach(item => {
-      ST[sup.key + ':' + item] = { on: false, qty: '' };
+      ST[sup.key + ':' + item] = { on: false, qty: '', stock: '' };
     });
 
     // ── 탭 생성 ──
@@ -521,20 +687,37 @@ function init() {
     const 칩만들기 = (item) => {
       const key  = sup.key + ':' + item;
       const chip = document.createElement('div');
-      chip.className = 'item-chip';
+      const 재고칸 = 재고품목_(sup, item);
+      chip.className = 'item-chip' + (재고칸 ? ' stock' : '');
       chip.id = 'chip-' + key;
-      chip.innerHTML =
-        `<span class="ic-name">${item}</span>` +
-        `<span class="ic-qty" id="qty-${key}"></span>`;
+      chip.innerHTML = 재고칸
+        ? `<span class="ic-name">${item}</span>` +
+          `<span class="ic-left">재고 ?</span>` +
+          `<span class="ic-qty" id="qty-${key}"></span>`
+        : `<span class="ic-name">${item}</span>` +
+          `<span class="ic-qty" id="qty-${key}"></span>`;
 
       // ⚠️ 업체가 아니라 품목으로 판정합니다 (미락처럼 섞인 곳 때문입니다)
-      if (수량품목_(sup, item)) {
+      if (재고칸) {
+        chip.addEventListener('click', () => 재고열기_(key, item, sup));
+      } else if (수량품목_(sup, item)) {
         chip.addEventListener('click', () => openStepper(key, item));
       } else {
         chip.addEventListener('click', () => toggleChip(key, sup.key));
       }
       grid.appendChild(chip);
     };
+
+    // ⚠️ 주류는 「몇 개 시킬까」가 아니라 「몇 개 남았나」를 적습니다. 설명이 없으면 반드시 헷갈립니다.
+    if (sup.재고식) {
+      const note = document.createElement('div');
+      note.className = 'juryu-note';
+      note.innerHTML = '🍶 <b>채우고 남은 개수</b>를 적어주세요. 시킬 개수는 알아서 나옵니다.<br>' +
+        '· 0.5 보다 적게 남았으면 없는 걸로 봅니다<br>' +
+        '· 전부 합쳐 ' + 주류최소 + '개부터 주문됩니다<br>' +
+        '· 일품진로 · 복분자 · 매화수 는 그냥 눌러서 고르세요';
+      section.appendChild(note);
+    }
 
     if (sup.groups) {
       // 자리별로 작은 머리글을 끼워 넣습니다
@@ -550,6 +733,12 @@ function init() {
     }
 
     section.appendChild(grid);
+    if (sup.재고식) {
+      const sum = document.createElement('div');
+      sum.className = 'juryu-sum';
+      sum.id = 'juryu-sum';
+      section.appendChild(sum);
+    }
     allSecs.appendChild(section);
   });
 
@@ -565,6 +754,7 @@ function init() {
 
   updateInfoBar(activeSup);
   updateBar();
+  주류합계그리기_();
 
   // ── 바구니 (2026-09-22) ────────────────────────────
   //    ⚠️ 다른 폰이 담은 것을 먼저 받아옵니다. 그래야 같은 걸 또 안 담습니다.
@@ -727,12 +917,44 @@ function updateChip(key) {
   const chip = document.getElementById('chip-' + key);
   const qEl  = document.getElementById('qty-'  + key);
   chip.classList.toggle('on', s.on);
+
+  // ── 재고식 품목 (주류) ──────────────────────────────
+  //    칩에 「남은 0.3 → 3개」처럼 둘 다 보여줍니다.
+  //    ⚠️ 시킬 개수만 보여주면 직원이 그게 재고인 줄 압니다.
+  const 정보 = key.split(':');
+  const sup  = SUPS.find(function (x) { return x.key === 정보[0]; });
+  if (sup && 재고품목_(sup, 정보[1])) {
+    const 남음 = (s.stock === '' || s.stock === undefined) ? null : s.stock;
+    const 시킴 = 주문수_(sup, 정보[1]);
+    const 왼쪽 = chip.querySelector('.ic-left');
+    if (왼쪽) 왼쪽.innerHTML = (남음 === null) ? '재고 ?' : ('남은 <b>' + 남음 + '</b>');
+    qEl.textContent = (남음 === null) ? '' : (시킴 + '개');
+    qEl.style.display = (남음 === null) ? 'none' : 'inline-block';
+    return;
+  }
+
   if (s.on && s.qty) {
     qEl.textContent = s.qty;
     qEl.style.display = 'inline-block';
   } else {
     qEl.style.display = 'none';
   }
+}
+
+// ── 주류 합계 줄 ────────────────────────────────────────
+function 주류합계그리기_() {
+  const sup = SUPS.find(function (s) { return s.재고식; });
+  if (!sup) return;
+  const el = document.getElementById('juryu-sum');
+  if (!el) return;
+
+  const 합 = 주류합계_(sup);
+  const 됨 = 합 >= 주류최소;
+  el.className = 'juryu-sum ' + (합 === 0 ? '' : (됨 ? 'ok' : 'bad'));
+  el.innerHTML = '<span>합계 ' + 합 + '개</span><span>' +
+    (합 === 0 ? '재고를 적어주세요'
+              : (됨 ? '✅ 보낼 수 있습니다' : '⚠️ ' + 주류최소 + '개부터 주문됩니다')) +
+    '</span>';
 }
 
 function updateBadge(supKey) {
@@ -1135,6 +1357,16 @@ function 담기완료화면_() {
 // 발송 (주류 전용 — 바구니를 안 쓰는 업체)
 // ═══════════════════════════════════════════════════
 async function submitAll() {
+  // ⚠️ 주류는 전부 합쳐 3개부터 주문됩니다. 그 밑으로는 업체가 안 옵니다.
+  const 주류 = SUPS.find(function (s) { return s.재고식; });
+  if (주류) {
+    const 합 = 주류합계_(주류);
+    if (합 > 0 && 합 < 주류최소) {
+      alert('🍶 주류는 전부 합쳐 ' + 주류최소 + '개부터 주문됩니다.\n지금 ' + 합 + '개입니다.');
+      return;
+    }
+  }
+
   const msgs    = buildMsgs();
   const delayed = msgs.some(m => m.delayed);
 
@@ -1221,7 +1453,7 @@ function reset() {
   SUPS.forEach(sup => {
     sup.items.forEach(item => {
       const key = sup.key + ':' + item;
-      ST[key] = { on: false, qty: '' };
+      ST[key] = { on: false, qty: '', stock: '' };
       updateChip(key);
     });
     updateBadge(sup.key);
@@ -1245,7 +1477,7 @@ init();
   <span><span class="rb-text">최신화</span><br><span class="rb-ver">v2026-08-22a</span></span>
 </div>
 <script>
-const APP_VERSION = '2026-08-22a';
+const APP_VERSION = '2026-09-22b';
 document.getElementById('refresh-btn').addEventListener('click', function () {
   if (!confirm('최신 화면으로 다시 받아올까요?\n지금 버전 v' + APP_VERSION)) return;
   // 주소 뒤에 시각을 붙이면 폰이 저장해둔 화면을 못 쓰고 새로 받는다
