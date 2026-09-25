@@ -1509,14 +1509,15 @@ function 바구니그리기_() {
         }).join('') +
       '</div>';
     }).join('') +
-    '<div class="cart-foot">⏰ 미락 22:25 · 나머지 00:25 에 자동으로 나갑니다</div>';
+    '<div class="cart-foot">⏰ 미락은 그날 밤 22:25 · 나머지는 자정 넘어 00:25 에 나갑니다<br>' +
+    '쉬는 날이 끼면 받을 수 있는 날에 맞춰 미뤄집니다</div>';
 }
 
 function 담기완료화면_() {
   document.getElementById('done-icon').textContent  = '📥';
   document.getElementById('done-title').textContent = '담았습니다';
   document.getElementById('done-sub').textContent   =
-    '문자는 아직 안 나갔습니다.\n미락 22:25 · 나머지 00:25 에 한 번만 나갑니다';
+    '문자는 아직 안 나갔습니다.\n받을 수 있는 날에 맞춰 한 번만 나갑니다';
   document.getElementById('done-result').innerHTML  = 바구니.map(function (b) {
     return '<div class="dr-row"><span class="dr-supplier">' + b.supplier + ' · ' + b.item +
            (b.qty ? ' ' + b.qty : '') + '</span><span class="dr-status st-dev">담김</span></div>';
