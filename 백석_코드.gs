@@ -281,6 +281,14 @@ function doGet(e) {
   //    앱이 다른 주소(깃허브)에 있어서 그냥 fetch 하면 브라우저가 막습니다.
   //    그래서 <script> 로 불러가는 옛날 방식(JSONP)을 씁니다.
   const p = (e && e.parameter) || {};
+  if (p.action === 'holidays') {
+    const json = JSON.stringify({ ok: true, items: holidayList() });
+    if (p.callback) {
+      return ContentService.createTextOutput(p.callback + '(' + json + ')')
+        .setMimeType(ContentService.MimeType.JAVASCRIPT);
+    }
+    return ContentService.createTextOutput(json).setMimeType(ContentService.MimeType.JSON);
+  }
   if (p.action === 'cart') {
     const json = JSON.stringify(getCart(p.date));
     if (p.callback) {
@@ -308,6 +316,8 @@ function doPost(e) {
     if (data.type === 'food_order') return handleFoodOrder(data); // [v2.0]
     if (data.type === 'cart_add')    return cartAdd(data);        // [v3.0] 담기
     if (data.type === 'cart_remove') return cartRemove(data);     // [v3.0] 빼기
+    if (data.type === 'holiday_add')    return holidayAdd(data);     // [v3.1] 임시휴무
+    if (data.type === 'holiday_remove') return holidayRemove(data);
     return jsonResponse({ ok: false, message: '알 수 없는 type' });
   } catch (err) {
     console.log('doPost 오류: ' + err.message);
@@ -382,11 +392,121 @@ function cartTime_(supplier) {
   return CART_TIME[supplier] || CART_TIME_DEFAULT;
 }
 
-// 그 영업일에 이 업체가 나갈 시각
+// ══════════════════════════════════════════════════════════
+//  쉬는 날  (2026-09-25)
+//
+//  ⚠️ 제가 발주를 「담기 + 예약 발송」으로 바꾸면서 원래 있던 휴무 판단을
+//     새 길로 안 옮겼습니다. 그래서 화요일에도, 미락이 쉬는 일요일에도
+//     문자가 나가고 있었습니다. 사장님 말: 「원래 잘했잖아」 — 맞습니다.
+//
+//  사장님이 정한 방식:
+//    「받을 날」을 먼저 찾고 그 전날 밤에 보낸다.
+//    예) 미락 휴무가 수·목이면, 월요일 발주는 목 22:25 에 나가야
+//        금요일 장사할 때 받는다.
+//
+//  정기휴무는 여기 두고, 임시휴무는 사장님이 앱에서 넣습니다.
+//  ⚠️ 둘이 겹쳐도 상관없습니다. 그냥 「쉬는 날」로 합쳐서 봅니다.
+// ══════════════════════════════════════════════════════════
+
+const 우리휴무요일_ = 2;                      // 화요일 (0=일)
+
+// 업체별 정기 휴무 요일 (사장님 확인 2026-09-25)
+//   ⚠️ 주류는 「수·목·일에 주문 가능」이지만 막지 않습니다.
+//      업체가 쉴 때 미리 넣어달라고 하는 일이 있어서, 안내만 하고 판단은 사람이 합니다.
+const 업체휴무요일_ = {
+  '미락': [0],        // 일요일
+  // 콩나물 · 네이버 · 사장님 · 배달관련 · 원당 · 음료수 — 쉬는 날 없음
+};
+
+const HOLIDAY_SHEET = '휴무일';
+
+// ── 임시 휴무 읽기 ──────────────────────────────────────
+//    시트 「휴무일」: 시작일 · 종료일 · 대상 · 사유
+//    대상이 '전체' 면 가게 휴무, 업체 이름이면 그 업체만
+function getHolidaySheet_() {
+  const ss = SpreadsheetApp.openById(CONFIG.SPREADSHEET_ID);
+  let sheet = ss.getSheetByName(HOLIDAY_SHEET);
+  if (!sheet) {
+    sheet = ss.insertSheet(HOLIDAY_SHEET);
+    sheet.appendRow(['시작일', '종료일', '대상', '사유', '넣은시각', '폰']);
+    sheet.getRange(1, 1, 1, 6).setFontWeight('bold').setBackground('#fee2e2');
+    sheet.setFrozenRows(1);
+  }
+  return sheet;
+}
+
+let _임시휴무 = null;      // 한 번 읽으면 이 실행 동안 재사용합니다
+function 임시휴무_() {
+  if (_임시휴무) return _임시휴무;
+  _임시휴무 = [];
+  try {
+    const sheet = getHolidaySheet_();
+    const last = sheet.getLastRow();
+    if (last >= 2) {
+      sheet.getRange(2, 1, last - 1, 4).getValues().forEach(function (r) {
+        const s = 날짜글_(r[0]), e = 날짜글_(r[1]) || 날짜글_(r[0]);
+        if (!s) return;
+        _임시휴무.push({ 시작: s, 끝: e, 대상: String(r[2] || '전체').trim() });
+      });
+    }
+  } catch (err) {
+    // ⚠️ 못 읽어도 멈추지 않습니다. 정기휴무만으로 판단합니다.
+    console.log('휴무일 탭 읽기 실패: ' + err.message);
+  }
+  return _임시휴무;
+}
+
+// 어떤 모양으로 적혀 있어도 yyyy-MM-dd 로 맞춥니다
+function 날짜글_(v) {
+  if (v instanceof Date) return Utilities.formatDate(v, 'Asia/Seoul', 'yyyy-MM-dd');
+  const m = String(v || '').match(/(\d{2,4})\D+(\d{1,2})\D+(\d{1,2})/);
+  if (!m) return '';
+  let y = parseInt(m[1], 10); if (y < 100) y += 2000;
+  const p = n => String(n).padStart(2, '0');
+  return y + '-' + p(parseInt(m[2], 10)) + '-' + p(parseInt(m[3], 10));
+}
+
+// ── 그날 쉬나 ───────────────────────────────────────────
+function 우리쉬나_(d) {
+  if (d.getDay() === 우리휴무요일_) return true;
+  if (isHoliday(d)) return true;                       // 법정 공휴일
+  const key = Utilities.formatDate(d, 'Asia/Seoul', 'yyyy-MM-dd');
+  return 임시휴무_().some(function (h) {
+    return h.대상 === '전체' && key >= h.시작 && key <= h.끝;
+  });
+}
+
+function 업체쉬나_(d, supplier) {
+  const 요일들 = 업체휴무요일_[supplier] || [];
+  if (요일들.indexOf(d.getDay()) >= 0) return true;
+  const key = Utilities.formatDate(d, 'Asia/Seoul', 'yyyy-MM-dd');
+  return 임시휴무_().some(function (h) {
+    return h.대상 === supplier && key >= h.시작 && key <= h.끝;
+  });
+}
+
+// ── 받을 수 있는 첫날 ───────────────────────────────────
+//    담은 다음날부터 하루씩 밀며 「우리도 열고 업체도 여는 날」을 찾습니다.
+function 받을날_(bizDate, supplier) {
+  const d = new Date(bizDate);
+  d.setDate(d.getDate() + 1);
+  for (let i = 0; i < 21; i++) {                       // 3주까지만 봅니다
+    if (!우리쉬나_(d) && !업체쉬나_(d, supplier)) return d;
+    d.setDate(d.getDate() + 1);
+  }
+  return d;
+}
+
+// ── 그 영업일에 이 업체가 나갈 시각 ─────────────────────
+//
+//  ⚠️ 받을 날을 먼저 정하고 거기서 거꾸로 셉니다.
+//     미락은 밤 22:25 에 보내면 다음날 받습니다  → 받을날 하루 전
+//     나머지는 자정 넘어 00:25 에 보내면 그날 받습니다 → 받을날 당일
 function cartSendAt_(bizDate, supplier) {
   const c = cartTime_(supplier);
-  const t = new Date(bizDate);
-  if (c.nextDay) t.setDate(t.getDate() + 1);
+  const 받는날 = 받을날_(bizDate, supplier);
+  const t = new Date(받는날);
+  if (!c.nextDay) t.setDate(t.getDate() - 1);          // 미락처럼 전날 밤에 보내는 경우
   t.setHours(c.hour, c.min, 0, 0);
   return t;
 }
@@ -417,6 +537,54 @@ function getCartSheet_() {
 //       그리고 라면용대파만 빼면 5개로 알아서 줄어듭니다.
 //
 //    출처가 없는 것(발주앱에서 그냥 담은 것)은 '' 이고, 그것도 한 자리를 차지합니다.
+
+// ── 임시 휴무 넣기·빼기·보기 (2026-09-25) ───────────────
+//
+//  ⚠️ 정기 휴무(화요일·미락 일요일)는 코드에 있습니다. 여기는 임시만 다룹니다.
+//     사장님 말: 「정기휴무는 가지고 있되, 임시적인 휴무를 내가 정할 수 있게」
+function holidayAdd(data) {
+  return cartLock_(function () {
+    const 시작 = 날짜글_(data.from);
+    const 끝   = 날짜글_(data.to) || 시작;
+    const 대상 = String(data.target || '전체').trim();
+    if (!시작) return jsonResponse({ ok: false, message: '날짜를 못 읽었습니다' });
+
+    getHolidaySheet_().appendRow([
+      시작, 끝, 대상, String(data.reason || ''), new Date(), String(data.device || ''),
+    ]);
+    _임시휴무 = null;                    // 다시 읽게 합니다
+    return jsonResponse({ ok: true, from: 시작, to: 끝, target: 대상 });
+  });
+}
+
+function holidayRemove(data) {
+  return cartLock_(function () {
+    const 시작 = 날짜글_(data.from);
+    const 대상 = String(data.target || '전체').trim();
+    const sheet = getHolidaySheet_();
+    const last = sheet.getLastRow();
+    if (last < 2) return jsonResponse({ ok: false, message: '지울 것이 없습니다' });
+
+    // ⚠️ 뒤에서부터 지웁니다. 앞에서 지우면 줄 번호가 밀려 엉뚱한 줄이 지워집니다.
+    const rows = sheet.getRange(2, 1, last - 1, 3).getValues();
+    let 지움 = 0;
+    for (let i = rows.length - 1; i >= 0; i--) {
+      if (날짜글_(rows[i][0]) === 시작 && String(rows[i][2] || '전체').trim() === 대상) {
+        sheet.deleteRow(i + 2);
+        지움++;
+      }
+    }
+    _임시휴무 = null;
+    return jsonResponse({ ok: 지움 > 0, removed: 지움 });
+  });
+}
+
+function holidayList() {
+  const 오늘 = Utilities.formatDate(new Date(), 'Asia/Seoul', 'yyyy-MM-dd');
+  // 이미 지난 것은 안 보여줍니다. 시트에는 기록으로 남습니다.
+  return 임시휴무_().filter(function (h) { return h.끝 >= 오늘; })
+    .map(function (h) { return { from: h.시작, to: h.끝, target: h.대상 }; });
+}
 
 // ── 담기 ────────────────────────────────────────────────
 function cartAdd(data) {

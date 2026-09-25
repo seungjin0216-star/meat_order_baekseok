@@ -120,6 +120,31 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Apple SD Gothic Neo','Malgun 
 .pc-footer{padding:9px 16px;display:flex;align-items:center;justify-content:space-between}
 .pc-len{font-size:11px;color:#8e8e93}
 .pc-to{font-size:11px;color:#c7c7cc}
+/* 쉬는 날 (2026-09-25) */
+.sib-rest{width:30px;height:28px;border-radius:9px;border:1.5px solid #fde68a;background:#fffbeb;
+          color:#b45309;font-size:13px;display:flex;align-items:center;justify-content:center;
+          cursor:pointer;flex:none;margin-left:6px}
+.sib-rest:active{opacity:.6}
+.rest-ov{display:none;position:fixed;inset:0;background:rgba(0,0,0,.5);z-index:700;align-items:flex-end;justify-content:center}
+.rest-ov.show{display:flex}
+.rest-sheet{background:#fff;border-radius:24px 24px 0 0;padding:22px 18px 34px;width:100%;max-width:500px}
+.rest-t{font-size:18px;font-weight:800;text-align:center;margin-bottom:4px}
+.rest-s{font-size:12.5px;color:#8e8e93;text-align:center;margin-bottom:16px;line-height:1.5}
+.rest-list{margin-bottom:14px}
+.rest-row{display:flex;justify-content:space-between;align-items:center;background:#fffbeb;
+          border-radius:11px;padding:11px 13px;margin-bottom:7px;font-size:14px;font-weight:600;color:#92400e}
+.rest-x{width:26px;height:26px;line-height:24px;text-align:center;border-radius:8px;background:#fff;
+        color:#b45309;font-size:16px;cursor:pointer}
+.rest-none{text-align:center;color:#c7c7cc;font-size:13px;padding:12px 0}
+.rest-in{display:flex;gap:8px;align-items:center;margin-bottom:12px}
+.rest-in input{flex:1;min-width:0;padding:12px;border-radius:11px;border:1.5px solid #e0e0e0;
+               font-size:15px;font-family:inherit;background:#fafafa}
+.rest-in span{color:#8e8e93;font-size:13px}
+.rest-btn{width:100%;padding:15px;border-radius:14px;border:none;background:#b45309;color:#fff;
+          font-size:15px;font-weight:700;cursor:pointer}
+.rest-close{width:100%;padding:12px;border-radius:12px;border:1.5px solid #e5e5ea;background:#fff;
+            color:#8e8e93;font-size:14px;margin-top:8px;cursor:pointer}
+
 /* 재고 다이얼 — index.html 에서 그대로 가져왔습니다 (2026-09-22) */
 .dial-ov{display:none;position:fixed;inset:0;background:rgba(0,0,0,.5);z-index:500;align-items:flex-end;justify-content:center}
 .dial-ov.show{display:flex}
@@ -324,6 +349,26 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Apple SD Gothic Neo','Malgun 
       <div class="dk dk-sp" onclick="dkDel()">⌫</div>
       <div class="dk dk-ok" id="dk-ok" onclick="dkOk()">확인</div>
     </div>
+  </div>
+</div>
+
+<!-- 쉬는 날 정하기 (2026-09-25) -->
+<div class="rest-ov" id="rest-ov" onclick="if(event.target.id==='rest-ov')쉼닫기_()">
+  <div class="rest-sheet">
+    <div class="rest-t" id="rest-title">쉬는 날</div>
+    <div class="rest-s">
+      이 기간에는 발주가 안 나갑니다.<br>
+      담긴 것은 사라지지 않고 <b>다음 영업일에</b> 나갑니다.
+    </div>
+    <input type="hidden" id="rest-target">
+    <div class="rest-list" id="rest-list"></div>
+    <div class="rest-in">
+      <input type="date" id="rest-from">
+      <span>~</span>
+      <input type="date" id="rest-to">
+    </div>
+    <button class="rest-btn" onclick="쉼넣기_()">쉬는 날로 넣기</button>
+    <button class="rest-close" onclick="쉼닫기_()">닫기</button>
   </div>
 </div>
 
@@ -760,6 +805,7 @@ function init() {
   // ── 바구니 (2026-09-22) ────────────────────────────
   //    ⚠️ 다른 폰이 담은 것을 먼저 받아옵니다. 그래야 같은 걸 또 안 담습니다.
   탭잠금_();
+  휴무읽기_();
   바구니새로고침_();
   setInterval(function () {
     if (document.visibilityState === 'visible') { 바구니새로고침_(); }
@@ -797,7 +843,14 @@ function switchSup(key) {
 function updateInfoBar(key) {
   const sup = SUPS.find(s => s.key === key);
   document.getElementById('sib-title').textContent = sup.emoji + ' ' + sup.key;
-  document.getElementById('sib-phone').textContent = CFG.PHONES[key] || '';
+
+  // ⚠️ 주류는 수·목·일에 주문을 받지만 막지는 않습니다.
+  //    사장님 말: 「주류업체 본인들이 쉴 때 주문일이 아닌 날에도 주문 넣어달라고 하더라고」
+  const 안내 = (key === '주류') ? '수·목·일 주문' : (쉬는날글_(key) || '');
+  document.getElementById('sib-phone').textContent =
+    안내 ? 안내 : (CFG.PHONES[key] || '');
+  document.getElementById('sib-phone').style.color = 안내 ? '#b45309' : '';
+  쉼버튼_(key);
 
   const allBtn = document.getElementById('sib-all-btn');
   // ⚠️ 수량과 토글이 섞인 업체(미락)는 전체 선택을 숨깁니다.
@@ -1219,6 +1272,116 @@ function 바구니새로고침_() {
   });
 }
 
+// ══════════════════════════════════════════════════════
+//  임시 휴무 (2026-09-25)
+//
+//  사장님 말: 「정기휴무는 가지고 있되, 임시적인 휴무를 내가 정할 수 있게」
+//
+//  정기휴무(화요일 · 미락 일요일)는 서버 코드에 있습니다. 여기는 임시만 넣습니다.
+//  ⚠️ 넣으면 그 기간 발주가 다음 영업일로 미뤄집니다. 담긴 것은 안 사라집니다.
+// ══════════════════════════════════════════════════════
+let 임시휴무 = [];       // [{from,to,target}]
+
+function 쉬는날글_(업체) {
+  const 오늘 = 오늘글_();
+  const 것 = 임시휴무.filter(function (h) {
+    return (h.target === 업체 || h.target === '전체') && h.to >= 오늘;
+  }).sort(function (a, b) { return a.from.localeCompare(b.from); })[0];
+  if (!것) return '';
+  const 짧게 = s => s.slice(5).replace('-', '/');
+  const 누구 = 것.target === '전체' ? '가게' : '';
+  return '🔒 ' + 누구 + (것.from === 것.to ? 짧게(것.from) : 짧게(것.from) + '~' + 짧게(것.to)) + ' 쉼';
+}
+
+function 오늘글_() {
+  const d = new Date(new Date().toLocaleString('en-US', { timeZone: 'Asia/Seoul' }));
+  const p = n => String(n).padStart(2, '0');
+  return d.getFullYear() + '-' + p(d.getMonth() + 1) + '-' + p(d.getDate());
+}
+
+function 쉼버튼_(업체) {
+  let b = document.getElementById('sib-rest');
+  if (!b) {
+    b = document.createElement('div');
+    b.id = 'sib-rest';
+    b.className = 'sib-rest';
+    document.querySelector('.sib-left').appendChild(b);
+  }
+  b.textContent = '🔒';
+  b.onclick = function () { 쉼열기_(업체); };
+}
+
+function 쉼열기_(업체) {
+  const 있음 = 임시휴무.filter(function (h) {
+    return h.target === 업체 && h.to >= 오늘글_();
+  });
+  const 오늘 = 오늘글_();
+
+  document.getElementById('rest-title').textContent = 업체 + ' 쉬는 날';
+  document.getElementById('rest-from').value = 오늘;
+  document.getElementById('rest-to').value   = 오늘;
+  document.getElementById('rest-target').value = 업체;
+
+  document.getElementById('rest-list').innerHTML = 있음.length
+    ? 있음.map(function (h) {
+        return '<div class="rest-row"><span>' + h.from + (h.to !== h.from ? ' ~ ' + h.to : '') +
+               '</span><span class="rest-x" onclick="쉼빼기_(\'' + h.target + '\',\'' + h.from + '\')">×</span></div>';
+      }).join('')
+    : '<div class="rest-none">정해둔 쉬는 날이 없습니다</div>';
+
+  document.getElementById('rest-ov').classList.add('show');
+}
+
+function 쉼닫기_() { document.getElementById('rest-ov').classList.remove('show'); }
+
+function 쉼넣기_() {
+  const from = document.getElementById('rest-from').value;
+  const to   = document.getElementById('rest-to').value || from;
+  const 대상 = document.getElementById('rest-target').value;
+  if (!from) { alert('날짜를 골라주세요.'); return; }
+  if (to < from) { alert('끝나는 날이 시작보다 빠릅니다.'); return; }
+
+  임시휴무.push({ from: from, to: to, target: 대상 });   // 화면 먼저
+  쉼닫기_();
+  updateInfoBar(activeSup);
+  휴무POST_('holiday_add', { from: from, to: to, target: 대상 });
+  setTimeout(휴무읽기_, 1500);
+}
+
+function 쉼빼기_(대상, from) {
+  임시휴무 = 임시휴무.filter(function (h) { return !(h.target === 대상 && h.from === from); });
+  쉼열기_(대상);
+  updateInfoBar(activeSup);
+  휴무POST_('holiday_remove', { from: from, target: 대상 });
+  setTimeout(휴무읽기_, 1500);
+}
+
+function 휴무POST_(type, 값) {
+  try {
+    fetch(CFG.GAS_URL, {
+      method: 'POST', mode: 'no-cors',
+      headers: { 'Content-Type': 'text/plain;charset=utf-8' },
+      body: JSON.stringify(Object.assign({ type: type, device: 폰번호 }, 값)),
+    }).catch(function () {});
+  } catch (e) {}
+}
+
+function 휴무읽기_() {
+  const cb = 'cbh_' + Date.now() + '_' + Math.floor(Math.random() * 1e6);
+  const s  = document.createElement('script');
+  const t  = setTimeout(정리, 12000);
+  function 정리() { clearTimeout(t); delete window[cb]; if (s.parentNode) s.parentNode.removeChild(s); }
+  window[cb] = function (res) {
+    정리();
+    if (!res || !res.ok) return;
+    임시휴무 = res.items || [];
+    updateInfoBar(activeSup);
+  };
+  s.src = CFG.GAS_URL + '?action=holidays&callback=' + cb;
+  s.onerror = 정리;
+  document.body.appendChild(s);
+}
+
 // ── 담기 ────────────────────────────────────────────
 async function 담기() {
   const msgs = buildMsgs();
@@ -1497,7 +1660,7 @@ init();
   <span><span class="rb-text">최신화</span><br><span class="rb-ver" id="rb-ver">v…</span></span>
 </div>
 <script>
-const APP_VERSION = '2026-09-25a';
+const APP_VERSION = '2026-09-25b';
 
 // ⚠️ 2026-09-22 — 버전 글자를 여기서 화면에 써넣습니다.
 //    그전에는 화면(HTML)과 코드(APP_VERSION) 두 군데에 따로 적혀 있었습니다.
