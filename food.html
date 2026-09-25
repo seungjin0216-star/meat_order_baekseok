@@ -664,12 +664,13 @@ function init() {
 
     // ── 탭 생성 ──
     const tab = document.createElement('div');
-    const isLocked = sup.key === '주류' && !isJuryuDay();
-    tab.className = 'sup-tab' + (idx === 0 ? ' active' : '') + (isLocked ? ' disabled' : '');
+    // ⚠️ 잠그지 않습니다. 발주일이 아니어도 눌러볼 수 있어야 합니다.
+    const 발주일아님 = sup.key === '주류' && !isJuryuDay();
+    tab.className = 'sup-tab' + (idx === 0 ? ' active' : '');
     tab.id = 'stab-' + sup.key;  // showDone에서 완료 표시용
     tab.innerHTML =
       `${sup.emoji} ${sup.key}` +
-      (isLocked ? ' 🔒' : '') +
+      (발주일아님 ? ' ⏰' : '') +
       `<span class="sup-tab-badge" id="tbadge-${sup.key}"></span>`;
     tab.addEventListener('click', () => switchSup(sup.key));
     tabRow.appendChild(tab);
@@ -778,10 +779,10 @@ function isJuryuDay() {
 }
 
 function switchSup(key) {
-  if (key === '주류' && !isJuryuDay()) {
-    alert('🍶 주류는 수·목·일에만 발주 가능합니다.\n오늘은 발주할 수 없는 날입니다.');
-    return;
-  }
+  // ⚠️ 2026-09-25 — 주류 요일 잠금을 풀었습니다.
+  //    사장님 말: 「주류업체 본인들이 쉴 때 주문일이 아닌 날에도
+  //               주문 넣어달라고 하더라고」
+  //    수·목·일이 아닌 날은 막지 않고 알려만 줍니다. 판단은 사장님이 합니다.
   document.getElementById('stab-'    + activeSup).classList.remove('active');
   document.getElementById('section-' + activeSup).classList.remove('active');
   activeSup = key;
@@ -1286,17 +1287,25 @@ async function 바구니빼기(supplier, item) {
   바구니새로고침_();
 }
 
-// ── 마감된 업체 탭 잠그기 ────────────────────────────
+// ── 마감이 지난 업체 표시 ────────────────────────────
+//
+//  ⚠️ 2026-09-25 — 잠그는 것을 없앴습니다.
+//     사장님 말: 「00시 30분 지나서 마감체크리스트하면서 담기했는데
+//                식자재발주 어플에는 다 잠겨있고 뭘 볼 수 없었어.
+//                잠그니까 오히려 불편해」
+//
+//     ⚠️ 제가 「잘못 담는 것」을 막으려다 「보는 것」까지 막았습니다.
+//        마감이 지나도 무엇이 떨어졌는지는 봐야 합니다.
+//        담으면 다음 영업일로 넘어갑니다 — 사라지지 않습니다.
 function 탭잠금_() {
   SUPS.forEach(function (sup) {
     const tab = document.getElementById('stab-' + sup.key);
     if (!tab) return;
-    if (바구니제외.indexOf(sup.key) >= 0) return;     // 주류는 요일로만 잠깁니다
-    const 잠김 = 마감지났나_(sup.key);
-    tab.classList.toggle('disabled', 잠김);
-    if (잠김 && tab.textContent.indexOf('🔒') < 0) {
-      tab.innerHTML = tab.innerHTML.replace(sup.key, sup.key + ' 🔒');
-    }
+    tab.classList.remove('disabled');               // 이제 아무것도 안 잠급니다
+    const 지남 = 바구니제외.indexOf(sup.key) < 0 && 마감지났나_(sup.key);
+    const 있음 = tab.innerHTML.indexOf('⏰') >= 0;
+    if (지남 && !있음)  tab.innerHTML = tab.innerHTML.replace(sup.key, sup.key + ' ⏰');
+    if (!지남 && 있음) tab.innerHTML = tab.innerHTML.replace(' ⏰', '');
   });
 }
 
@@ -1488,7 +1497,7 @@ init();
   <span><span class="rb-text">최신화</span><br><span class="rb-ver" id="rb-ver">v…</span></span>
 </div>
 <script>
-const APP_VERSION = '2026-09-22b';
+const APP_VERSION = '2026-09-25a';
 
 // ⚠️ 2026-09-22 — 버전 글자를 여기서 화면에 써넣습니다.
 //    그전에는 화면(HTML)과 코드(APP_VERSION) 두 군데에 따로 적혀 있었습니다.

@@ -402,6 +402,7 @@ function cartAdd(data) {
     const 지점  = (typeof BRANCH !== 'undefined') ? BRANCH : '백석점';
 
     const 거절 = [];
+    const 넘김 = [];     // 마감이 지나 다음 영업일로 넘어간 업체
     const rows = [];
 
     items.forEach(function (it) {
@@ -411,12 +412,20 @@ function cartAdd(data) {
         거절.push(업체 + ' 은 바구니를 쓰지 않습니다');
         return;
       }
-      // ⚠️ 보낼 시각이 지났으면 안 받습니다. 받아두면 영영 안 나갑니다.
+      // ⚠️ 2026-09-25 — 마감이 지나도 거절하지 않습니다.
+      //
+      //    사장님 말: 「00시 30분 지나서 마감체크리스트하면서 담기했는데
+      //               식자재발주 어플에는 다 잠겨있고 뭘 볼 수 없었어」
+      //
+      //    마감 뒤에 떨어진 것을 알았는데 담을 데가 없으면 그냥 잊힙니다.
+      //    그래서 담되 다음 영업일로 넘깁니다. 사라지지 않습니다.
+      var 담을영업일 = biz;
       if (cartSendAt_(biz, 업체).getTime() <= now.getTime()) {
-        거절.push(업체 + ' 은 ' + cartTime_(업체).마감 + ' 에 마감됐습니다');
-        return;
+        담을영업일 = new Date(biz);
+        담을영업일.setDate(담을영업일.getDate() + 1);
+        넘김.push(업체);
       }
-      rows.push([now, formatDate(biz), 지점, 업체, String(it.item || ''),
+      rows.push([now, formatDate(담을영업일), 지점, 업체, String(it.item || ''),
                  String(it.qty || ''), '담김', String(data.device || ''),
                  String(it.src || '')]);
     });
@@ -425,7 +434,8 @@ function cartAdd(data) {
       const sheet = getCartSheet_();
       sheet.getRange(sheet.getLastRow() + 1, 1, rows.length, 9).setValues(rows);
     }
-    return jsonResponse({ ok: rows.length > 0, added: rows.length, rejected: 거절 });
+    return jsonResponse({ ok: rows.length > 0, added: rows.length,
+                          rejected: 거절, movedToNextDay: 넘김 });
   });
 }
 
