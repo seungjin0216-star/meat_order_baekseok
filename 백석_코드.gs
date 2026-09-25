@@ -351,6 +351,33 @@ const CART_TIME_DEFAULT = { hour: 0, min: 25, nextDay: true, 마감: '00:30' };
 // ⚠️ 바구니를 안 쓰는 업체. 주류는 재고를 세어 그때그때 보냅니다.
 const CART_SKIP = ['주류'];
 
+// ── 가져갈 것 알림 (2026-09-25) ────────────────────────
+//
+//  사장님 말:
+//    「사장님 탭에 문자는 와야 해. 하지만 14시쯤에는 알림이 와야
+//      내가 가지러 들렀다가 가는 거야」
+//
+//  「사장님」 탭은 업체가 아니라 사장님이 직접 가져오는 것들입니다.
+//  (국수소스·파장소스·감미 등)
+//  새벽 00:25 문자는 「무엇이 떨어졌나」이고,
+//  14시 문자는 「오늘 들러서 가져갈 것」입니다. 쓰임이 다릅니다.
+//
+//  ⚠️ 새벽 문자는 01053226995 로, 낮 알림은 01041216995 로 갑니다.
+//     둘은 다른 번호이고 다른 시각입니다.
+const CART_NOTIFY = {
+  '사장님': { 번호: '01041216995', hour: 14, min: 0 },
+};
+
+// 그 영업일 것을 언제 알릴 것인가 — 문자가 나간 날(영업일+1) 낮입니다
+function cartNotifyAt_(bizDate, supplier) {
+  const c = CART_NOTIFY[supplier];
+  if (!c) return null;
+  const t = new Date(bizDate);
+  t.setDate(t.getDate() + 1);        // 00:25 에 나가므로 하루 뒤가 발송일입니다
+  t.setHours(c.hour, c.min, 0, 0);
+  return t;
+}
+
 function cartTime_(supplier) {
   return CART_TIME[supplier] || CART_TIME_DEFAULT;
 }
@@ -469,7 +496,7 @@ function getCart(dateStr) {
 
   const sheet = getCartSheet_();
   const last  = sheet.getLastRow();
-  if (last < 2) return { ok: true, date: date, items: [], sent: {} };
+  if (last < 2) return { ok: true, date: date, items: [], sent: {}, notified: {} };
 
   // 하루치만 보면 되므로 끝에서 600줄만 읽습니다
   const from = Math.max(2, last - 600 + 1);
@@ -478,6 +505,7 @@ function getCart(dateStr) {
   const 본것  = {};
   const 담긴것 = [];
   const 보냄  = {};
+  const 알림  = {};   // 「가져갈 것」을 이미 알린 업체
 
   for (let i = rows.length - 1; i >= 0; i--) {
     const r = rows[i];
@@ -490,7 +518,14 @@ function getCart(dateStr) {
     const 업체 = String(r[3]);
     const 상태 = String(r[6]);
 
-    if (상태 === '보냄') { if (!보냄[업체]) 보냄[업체] = rowHHMM_(r[0]); continue; }
+    if (상태 === '보냄' || 상태 === '보냄(실패)') {
+      if (!보냄[업체]) 보냄[업체] = rowHHMM_(r[0]);
+      continue;
+    }
+    if (상태 === '가져갈알림' || 상태 === '가져갈알림(실패)') {
+      if (!알림[업체]) 알림[업체] = rowHHMM_(r[0]);
+      continue;
+    }
 
     // ⚠️ 출처까지 넣어야 같은 품목이 여러 자리에서 와도 따로 셉니다 (대파)
     const 키 = 업체 + ':' + String(r[4]) + ':' + String(r[8] || '');
@@ -509,7 +544,8 @@ function getCart(dateStr) {
   }
 
   담긴것.reverse();   // 담은 순서대로
-  return { ok: true, date: date, items: 담긴것, sent: 보냄, deadlines: cartDeadlines_(biz) };
+  return { ok: true, date: date, items: 담긴것, sent: 보냄,
+           notified: 알림, deadlines: cartDeadlines_(biz) };
 }
 
 function cartDeadlines_(biz) {
@@ -566,10 +602,56 @@ function sendCartDue() {
   });
 
   Object.keys(업체별).forEach(function (업체) {
-    if (cart.sent[업체]) return;                                   // 이미 보냈습니다
-    if (cartSendAt_(biz, 업체).getTime() > now.getTime()) return;  // 아직 시간이 안 됐습니다
-    sendCartFor_(업체, 업체별[업체], 오늘, biz);
+    // ── 발주 문자 ──
+    if (!cart.sent[업체] && cartSendAt_(biz, 업체).getTime() <= now.getTime()) {
+      sendCartFor_(업체, 업체별[업체], 오늘, biz);
+      return;
+    }
+
+    // ── 가져갈 것 알림 (사장님 탭) ──
+    //    ⚠️ 발주 문자가 이미 나간 뒤에만 보냅니다.
+    //       안 나간 것을 「가져가세요」 하면 헛걸음입니다.
+    if (!cart.sent[업체]) return;
+    if (cart.notified[업체]) return;                    // 이미 알렸습니다
+    const 알릴때 = cartNotifyAt_(biz, 업체);
+    if (!알릴때 || 알릴때.getTime() > now.getTime()) return;
+    sendPickupNotice_(업체, 업체별[업체], 오늘, biz);
   });
+}
+
+// ── 「오늘 가져갈 것」 문자 ──────────────────────────────
+function sendPickupNotice_(업체, items, 오늘, biz) {
+  const c = CART_NOTIFY[업체];
+  if (!c) return;
+
+  // 같은 품목은 합칩니다 (발주 문자와 같은 방식)
+  const 합 = {}, 순서 = [];
+  items.forEach(function (it) {
+    if (합[it.item] === undefined) { 합[it.item] = 0; 순서.push(it.item); }
+    const n = parseFloat(it.qty);
+    합[it.item] += (isFinite(n) && n > 0) ? n : 0;
+  });
+  const 목록 = 순서.map(function (이름) {
+    return 합[이름] > 0 ? (이름 + ' ' + 합[이름]) : 이름;
+  }).join(' · ');
+
+  // 문자가 나간 날(영업일+1)을 적습니다 — 오늘 가져갈 것이니까요
+  const 발송일 = new Date(biz);
+  발송일.setDate(발송일.getDate() + 1);
+
+  const body = '[가져갈 것 ' + formatDateShort_(발송일) + ']\n' + 목록;
+  const channel = getByteLen(body) > CONFIG.FOOD.SMS_MAX_BYTES ? 'LMS' : 'SMS';
+  const r = sendFoodSms(String(c.번호).replace(/-/g, ''), body, channel);
+
+  // ⚠️ 실패해도 표시를 남깁니다. 안 남기면 5분 뒤에 또 보냅니다.
+  cartLock_(function () {
+    const sheet = getCartSheet_();
+    sheet.appendRow([new Date(), 오늘, '백석점', 업체, body, '',
+                     r.ok ? '가져갈알림' : '가져갈알림(실패)', 'server', '']);
+  });
+
+  if (!r.ok) alertFailure('가져갈 것 알림 실패 (' + 업체 + ')', body, r.message || '알 수 없음');
+  else console.log('가져갈 것 알림 보냄: ' + 업체 + ' / ' + body);
 }
 
 function sendCartFor_(업체, items, 오늘, biz) {
