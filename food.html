@@ -295,7 +295,7 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Apple SD Gothic Neo','Malgun 
       🕗 <strong>화요일 20:30 자동 발송</strong> — 지금은 저장만 됩니다
     </div>
     <div id="preview-cards"></div>
-    <button class="submit-btn" id="submit-btn" onclick="담기()">📥 발주 담기</button>
+    <button class="submit-btn" id="submit-btn" onclick="담기()">📨 발주하기</button>
   </div>
 </div>
 
@@ -802,16 +802,17 @@ function init() {
   updateBar();
   주류합계그리기_();
 
-  // ── 바구니 (2026-09-22) ────────────────────────────
-  //    ⚠️ 다른 폰이 담은 것을 먼저 받아옵니다. 그래야 같은 걸 또 안 담습니다.
+  // ── 바구니 [v4.0] 2026-09-27 ───────────────────────
+  //    ⚠️ 바구니를 「보여주기」가 아니라 「화면 체크로 가져오기」로 바꿨습니다.
+  //       그전에는 바구니와 화면 체크가 따로 놀아서 같은 대파가 세 개로 갈라졌습니다.
   탭잠금_();
   휴무읽기_();
-  바구니새로고침_();
+  바구니가져오기_();
   setInterval(function () {
-    if (document.visibilityState === 'visible') { 바구니새로고침_(); }
+    if (document.visibilityState === 'visible') { 바구니가져오기_(); }
   }, 30000);
   document.addEventListener('visibilitychange', function () {
-    if (document.visibilityState === 'visible') 바구니새로고침_();
+    if (document.visibilityState === 'visible') 바구니가져오기_();
   });
 }
 
@@ -1158,12 +1159,9 @@ function goPreview() {
   const msgs = buildMsgs();
   if (!msgs.length) return;
 
-  const delayed = msgs.some(m => m.delayed);
-  document.getElementById('preview-delay-notice').style.display = delayed ? 'block' : 'none';
-  // ⚠️ 주류만 고른 경우에는 바로 나갑니다 (바구니를 안 쓰는 업체)
-  const 주류만 = msgs.every(m => 바구니제외.indexOf(m.supplier) >= 0);
-  document.getElementById('submit-btn').textContent = 주류만
-    ? '📨 지금 보내기' : '📥 발주 담기';
+  // ⚠️ [v4.0] 2026-09-27 — 이제 누르면 바로 나갑니다. 「나중에 나갑니다」 안내를 없앴습니다.
+  document.getElementById('preview-delay-notice').style.display = 'none';
+  document.getElementById('submit-btn').textContent = '📨 지금 보내기';
 
   const cards = document.getElementById('preview-cards');
   cards.innerHTML = '';
@@ -1270,6 +1268,107 @@ function 바구니새로고침_() {
     바구니그리기_();
     탭잠금_();
   });
+}
+
+// ══════════════════════════════════════════════════════
+//  [v4.0] 바구니를 화면 체크로 가져옵니다   2026-09-27
+//
+//  ⚠️ 왜 만들었나 — 2026-09-27 사진으로 확인된 사고
+//    바구니(서버)와 화면 체크(ST)가 따로 놀았습니다.
+//      마감체크 gr2 에서 온 대파 5
+//      마감체크 gl1 에서 온 대파 1
+//      발주앱에서 직접 체크한 대파 13
+//    서버는 출처(src)가 다르면 다른 것으로 세기 때문에 셋 다 살아남았습니다.
+//    ⚠️ 게다가 미리보기는 화면 체크만 보여줘서 「대파 13」이라고 거짓말했습니다.
+//       실제로는 19가 나갈 상황이었습니다.
+//
+//  이제는 바구니를 화면 체크에 **합칩니다.**
+//    ① 같은 품목은 출처가 달라도 더합니다.  대파 5 + 1 → 6
+//    ② 화면에 이미 있으면 그 위에 더합니다.  화면 2 + 바구니 6 → 8
+//    ③ 서버에 「가져갔다」고 알려 바구니에서 뺍니다 (cart_absorb)
+//       ⚠️ 이걸 안 하면 다음에 열 때 또 들어와 두 배가 됩니다
+//
+//  ⚠️ 사람이 화면에서 고친 값이 최종입니다. 다시 덮어쓰지 않습니다.
+// ══════════════════════════════════════════════════════
+async function 바구니가져오기_() {
+  const res = await 바구니읽기_();
+  if (!res || !res.ok) return;
+
+  보낸업체표 = res.sent || {};
+  const 올것 = (res.items || []).filter(function (b) {
+    return 바구니제외.indexOf(b.supplier) < 0;   // 주류는 바구니를 안 씁니다
+  });
+
+  if (!올것.length) { 바구니 = []; 바구니그리기_(); 탭잠금_(); return; }
+
+  // ── ① 품목별로 합칩니다 (출처는 무시) ──
+  const 합 = {};
+  올것.forEach(function (b) {
+    const k = b.supplier + ':' + b.item;
+    const n = parseFloat(b.qty);
+    if (합[k] === undefined) 합[k] = 0;
+    합[k] += (isFinite(n) && n > 0) ? n : 0;
+  });
+
+  // ── ② 화면 체크에 더합니다 ──
+  const 들어온것 = [];
+  Object.keys(합).forEach(function (k) {
+    if (!ST[k]) return;                       // 앱에 없는 품목이면 건너뜁니다
+    const 업체키 = k.slice(0, k.indexOf(':'));
+    const 품목   = k.slice(k.indexOf(':') + 1);
+    const sup    = SUPS.find(function (s) { return s.key === 업체키; });
+    if (!sup) return;                         // ⚠️ 앱에 없는 업체 — 조용히 건너뜁니다
+    const 수량품목 = 수량품목_(sup, 품목);
+    const 전 = parseFloat(ST[k].qty);
+    const 앞 = (isFinite(전) && 전 > 0) ? 전 : 0;
+    const 새 = 앞 + 합[k];
+    ST[k] = { on: true, qty: (수량품목 && 새 > 0) ? String(새) : (ST[k].qty || '') };
+    updateChip(k);
+    들어온것.push(업체키 + ' · ' + 품목 + (수량품목 && 새 > 0 ? ' ' + 새 : ''));
+  });
+
+  // ── ③ 서버에 가져갔다고 알립니다 ──
+  //     ⚠️ 답장을 안 기다립니다. 실패해도 화면은 이미 반영됐습니다.
+  //        못 알렸으면 다음에 또 들어오는데, 그건 「두 배」라 위험합니다.
+  //        그래서 여기만은 답장을 기다립니다.
+  try {
+    await fetch(CFG.GAS_URL, {
+      method: 'POST',
+      headers: { 'Content-Type': 'text/plain;charset=utf-8' },
+      body: JSON.stringify({ type: 'cart_absorb', device: 폰번호 }),
+    });
+  } catch (e) {
+    // ⚠️ 답장을 못 받아도 서버는 처리했을 수 있습니다. 아래에서 다시 읽어 확인합니다.
+  }
+
+  저장();
+  SUPS.forEach(function (s) { updateBadge(s.key); });
+  updateBar();
+  주류합계그리기_();
+
+  // 서버가 정말 비웠는지 확인합니다
+  await 바구니새로고침_();
+
+  if (들어온것.length) 가져옴알림_(들어온것);
+}
+
+// 무엇이 들어왔는지 잠깐 띄웁니다 — 모르게 숫자가 바뀌면 안 됩니다
+function 가져옴알림_(목록) {
+  let el = document.getElementById('absorb-toast');
+  if (!el) {
+    el = document.createElement('div');
+    el.id = 'absorb-toast';
+    el.style.cssText = 'position:fixed;left:12px;right:12px;bottom:88px;z-index:9999;' +
+      'background:#1c1c1e;color:#fff;border-radius:14px;padding:14px 16px;' +
+      'font-size:14px;line-height:1.5;box-shadow:0 8px 24px rgba(0,0,0,.3)';
+    document.body.appendChild(el);
+  }
+  el.innerHTML = '📥 마감체크에서 <b>' + 목록.length + '건</b>을 가져왔습니다<br>' +
+                 '<span style="color:#a1a1a6;font-size:13px">' +
+                 목록.slice(0, 6).join(' · ') + (목록.length > 6 ? ' 외' : '') + '</span>';
+  el.style.display = 'block';
+  clearTimeout(window.__absorbT);
+  window.__absorbT = setTimeout(function () { el.style.display = 'none'; }, 6000);
 }
 
 // ══════════════════════════════════════════════════════
@@ -1382,54 +1481,100 @@ function 휴무읽기_() {
   document.body.appendChild(s);
 }
 
-// ── 담기 ────────────────────────────────────────────
+// ══════════════════════════════════════════════════════
+//  [v4.0] 발주하기 — 사람이 누르면 그때 나갑니다   2026-09-27
+//
+//  사장님 말: 「무조건 식자재발주는 켤 거야. 미리 장바구니에 담아놓으면
+//              추후에 발주하는 데 도움이 되게끔만 사용되면 됨」
+//             「굳이 업체별로 시간 제한을 둘 필요 없을 것 같아」
+//
+//  ⚠️ 시간 제한이 없습니다. 언제 눌러도 나갑니다.
+//  ⚠️ 화면에 보이는 것이 그대로 나갑니다. 바구니를 다시 합치지 않습니다.
+//     바구니는 앱을 열 때 이미 화면으로 가져왔습니다 (바구니가져오기_).
+//     여기서 또 합치면 두 배가 됩니다 — 그게 26-09-27 사고였습니다.
+// ══════════════════════════════════════════════════════
 async function 담기() {
   const msgs = buildMsgs();
-  if (!msgs.length) { alert('담을 것이 없습니다.'); return; }
+  if (!msgs.length) { alert('보낼 것이 없습니다.'); return; }
 
-  // CC 는 같은 내용이 한 번 더 가는 것이므로 바구니에는 한 번만 담습니다
   const 본것 = {};
   const items = [];
   const 주류것 = [];
+  const 업체목록 = [];
 
   msgs.forEach(function (m) {
-    if (본것[m.supplier]) return;
+    if (본것[m.supplier]) return;          // CC 는 같은 내용이 한 번 더 가는 것입니다
     본것[m.supplier] = true;
     const sup = SUPS.find(function (s) { return s.key === m.supplier; });
-    const 담을것 = sup.items.filter(function (i) { return ST[sup.key + ':' + i].on; })
-      .map(function (i) { return { supplier: sup.key, item: i, qty: ST[sup.key + ':' + i].qty || '' }; });
-    if (바구니제외.indexOf(m.supplier) >= 0) 주류것.push(m);
-    else items.push.apply(items, 담을것);
+    if (바구니제외.indexOf(m.supplier) >= 0) { 주류것.push(m); return; }
+    업체목록.push(m.supplier);
+    sup.items.forEach(function (i) {
+      const k = sup.key + ':' + i;
+      if (!ST[k] || !ST[k].on) return;
+      items.push({ supplier: sup.key, item: i, qty: ST[k].qty || '' });
+    });
   });
 
-  // ⚠️ 주류는 바구니를 안 씁니다. 지금은 예전처럼 바로 보냅니다.
+  // ⚠️ 주류는 바구니를 안 씁니다. 예전처럼 재고를 세어 바로 보냅니다.
   if (주류것.length && !items.length) return submitAll();
 
-  showLoading('발주 담는 중...');
+  // ── 다른 폰이 방금 담은 게 있으면 먼저 알립니다 ──
+  //    ⚠️ 보낸 뒤에 들어온 것은 다음 발주까지 기다려야 합니다. 그 전에 알려야 합니다.
+  const 새로 = await 새로담긴것_();
+  if (새로.length) {
+    if (!confirm('⚠️ 방금 ' + 새로.length + '건이 더 담겼습니다.\n\n' +
+                 새로.slice(0, 8).join('\n') +
+                 '\n\n이건 아직 화면에 없습니다.\n취소하고 확인하시겠습니까?\n\n' +
+                 '[확인] 취소하고 가져오기   [취소] 그냥 보내기')) {
+      // 그냥 보냅니다
+    } else {
+      await 바구니가져오기_();
+      return;
+    }
+  }
+
+  const 요약 = items.map(function (it) {
+    return it.supplier + ' · ' + it.item + (it.qty ? ' ' + it.qty : '');
+  });
+  if (!confirm('📤 지금 문자를 보냅니다\n\n' + 업체목록.join(' · ') + '\n' +
+               요약.length + '개 품목\n\n보낼까요?')) return;
+
+  showLoading('문자 보내는 중...');
+  let 결과 = null;
   try {
-    await fetch(CFG.GAS_URL, {
+    const r = await fetch(CFG.GAS_URL, {
       method: 'POST',
       headers: { 'Content-Type': 'text/plain;charset=utf-8' },
-      body: JSON.stringify({ type: 'cart_add', device: 폰번호, items: items }),
+      body: JSON.stringify({ type: 'cart_send', device: 폰번호, items: items }),
     });
+    결과 = await r.json();
   } catch (e) {
-    // ⚠️ 답장을 못 받아도 서버는 담았을 수 있습니다.
-    //    그래서 「실패」라고 하지 않고, 아래에서 다시 읽어 확인합니다.
+    // ⚠️ 답장을 못 받아도 서버는 보냈을 수 있습니다.
+    //    「실패」라고 하면 직원이 또 누릅니다 — 26-09-19 원당 3통 사고가 그것이었습니다.
+    //    그래서 실패라고 하지 않고 「확인 중」으로 둡니다.
   }
   hideLoading();
 
+  // 보냈으면 화면 체크를 비웁니다
+  보낸업체비우기(업체목록);
   await 바구니새로고침_();
 
-  // 담긴 게 확인되면 체크를 비웁니다
-  const 담긴업체 = {};
-  바구니.forEach(function (b) { 담긴업체[b.supplier] = true; });
-  보낸업체비우기_담기(Object.keys(담긴업체));
+  if (주류것.length) await submitAll();   // 주류가 섞여 있으면 그것만 따로
+  else 발송완료화면_(업체목록, 요약, 결과);
+}
 
-  if (주류것.length) await submitAll();   // 주류가 섞여 있으면 그것만 따로 보냅니다
-  else 담기완료화면_();
+// 내가 화면에 가져온 뒤에 누가 더 담은 것이 있나
+async function 새로담긴것_() {
+  const res = await 바구니읽기_();
+  if (!res || !res.ok) return [];
+  return (res.items || [])
+    .filter(function (b) { return 바구니제외.indexOf(b.supplier) < 0; })
+    .map(function (b) { return b.supplier + ' · ' + b.item + (b.qty ? ' ' + b.qty : ''); });
 }
 
 // 담긴 업체의 체크만 비웁니다 (안 담긴 업체는 그대로 둬야 다시 담을 수 있습니다)
+// ⚠️ [v4.0] 쓰이지 않습니다. 담기() 가 보낸업체비우기() 를 직접 부릅니다.
+//    지우지 않고 남겨둡니다 — 옛 화면이 캐시된 폰이 부를 수 있습니다.
 function 보낸업체비우기_담기(supKeys) {
   보낸업체비우기(supKeys);
 }
@@ -1450,21 +1595,20 @@ async function 바구니빼기(supplier, item) {
   바구니새로고침_();
 }
 
-// ── 마감이 지난 업체 표시 ────────────────────────────
+// ── 업체 마감 표시 ──────────────────────────────────
 //
 //  ⚠️ 2026-09-25 — 잠그는 것을 없앴습니다.
-//     사장님 말: 「00시 30분 지나서 마감체크리스트하면서 담기했는데
-//                식자재발주 어플에는 다 잠겨있고 뭘 볼 수 없었어.
-//                잠그니까 오히려 불편해」
+//     사장님: 「잠그니까 오히려 불편해」
 //
-//     ⚠️ 제가 「잘못 담는 것」을 막으려다 「보는 것」까지 막았습니다.
-//        마감이 지나도 무엇이 떨어졌는지는 봐야 합니다.
-//        담으면 다음 영업일로 넘어갑니다 — 사라지지 않습니다.
+//  ⚠️ [v4.0] 2026-09-27 — 시간 제한 자체가 없어졌습니다.
+//     사장님: 「굳이 업체별로 시간 제한을 둘 필요 없을 것 같아. 단 알림만 오게끔」
+//     ⏰ 는 「이 업체는 보통 이 시각까지」라는 참고 표시일 뿐입니다.
+//     지나도 보낼 수 있습니다. 서버가 거절하지 않습니다.
 function 탭잠금_() {
   SUPS.forEach(function (sup) {
     const tab = document.getElementById('stab-' + sup.key);
     if (!tab) return;
-    tab.classList.remove('disabled');               // 이제 아무것도 안 잠급니다
+    tab.classList.remove('disabled');               // 아무것도 안 잠급니다
     const 지남 = 바구니제외.indexOf(sup.key) < 0 && 마감지났나_(sup.key);
     const 있음 = tab.innerHTML.indexOf('⏰') >= 0;
     if (지남 && !있음)  tab.innerHTML = tab.innerHTML.replace(sup.key, sup.key + ' ⏰');
@@ -1509,18 +1653,31 @@ function 바구니그리기_() {
         }).join('') +
       '</div>';
     }).join('') +
-    '<div class="cart-foot">⏰ 미락은 그날 밤 22:25 · 나머지는 자정 넘어 00:25 에 나갑니다<br>' +
-    '쉬는 날이 끼면 받을 수 있는 날에 맞춰 미뤄집니다</div>';
+    '<div class="cart-foot">📥 마감체크에서 담긴 것입니다. 앱을 열면 위 체크로 들어옵니다<br>' +
+    '⚠️ 문자는 「발주하기」를 눌러야 나갑니다. 자동으로 안 나갑니다</div>';
 }
 
-function 담기완료화면_() {
-  document.getElementById('done-icon').textContent  = '📥';
-  document.getElementById('done-title').textContent = '담았습니다';
-  document.getElementById('done-sub').textContent   =
-    '문자는 아직 안 나갔습니다.\n받을 수 있는 날에 맞춰 한 번만 나갑니다';
-  document.getElementById('done-result').innerHTML  = 바구니.map(function (b) {
-    return '<div class="dr-row"><span class="dr-supplier">' + b.supplier + ' · ' + b.item +
-           (b.qty ? ' ' + b.qty : '') + '</span><span class="dr-status st-dev">담김</span></div>';
+// [v4.0] 발송 완료 화면
+function 발송완료화면_(업체목록, 요약, 결과) {
+  const 실패 = (결과 && 결과.failed) || [];
+  const 확인못함 = !결과;
+
+  document.getElementById('done-icon').textContent  =
+    실패.length ? '⚠️' : (확인못함 ? '📨' : '✅');
+  document.getElementById('done-title').textContent =
+    실패.length ? '일부 실패' : (확인못함 ? '보냈습니다' : '발송 완료!');
+
+  // ⚠️ 답장을 못 받았을 때 「실패」라고 하면 직원이 또 누릅니다.
+  //    26-09-19 원당 콩나물 3통이 그렇게 났습니다. 그래서 이렇게 씁니다.
+  document.getElementById('done-sub').textContent = 실패.length
+    ? '실패: ' + 실패.join(' / ') + '\n사장님 메일과 「발송실패」 시트를 확인하세요'
+    : (확인못함
+        ? '⚠️ 답장을 못 받았지만 문자는 나갔을 가능성이 큽니다.\n사장님께 요약 문자가 오면 나간 것입니다. 다시 누르지 마세요'
+        : 업체목록.join(' · ') + ' 에 보냈습니다\n사장님께 요약 문자가 갑니다');
+
+  document.getElementById('done-result').innerHTML = 요약.map(function (s) {
+    return '<div class="dr-row"><span class="dr-supplier">' + s +
+           '</span><span class="dr-status st-sms">보냄</span></div>';
   }).join('');
   showScreen('s-done');
 }
@@ -1661,7 +1818,7 @@ init();
   <span><span class="rb-text">최신화</span><br><span class="rb-ver" id="rb-ver">v…</span></span>
 </div>
 <script>
-const APP_VERSION = '2026-09-25b';
+const APP_VERSION = '2026-09-27-v4';
 
 // ⚠️ 2026-09-22 — 버전 글자를 여기서 화면에 써넣습니다.
 //    그전에는 화면(HTML)과 코드(APP_VERSION) 두 군데에 따로 적혀 있었습니다.

@@ -316,6 +316,8 @@ function doPost(e) {
     if (data.type === 'food_order') return handleFoodOrder(data); // [v2.0]
     if (data.type === 'cart_add')    return cartAdd(data);        // [v3.0] 담기
     if (data.type === 'cart_remove') return cartRemove(data);     // [v3.0] 빼기
+    if (data.type === 'cart_absorb') return cartAbsorb(data);     // [v4.0] 화면이 가져감
+    if (data.type === 'cart_send')   return cartSend(data);       // [v4.0] 사람이 보내기
     if (data.type === 'holiday_add')    return holidayAdd(data);     // [v3.1] 임시휴무
     if (data.type === 'holiday_remove') return holidayRemove(data);
     return jsonResponse({ ok: false, message: '알 수 없는 type' });
@@ -337,11 +339,37 @@ function doPost(e) {
 //    이제는 담아만 둡니다. 문자는 정해진 시각에 한 번만 나갑니다.
 //    몇 번을 담아도 나가는 건 한 번입니다 — 중복이 구조적으로 불가능합니다.
 //
-//  보내는 시각 (사장님 지정 2026-09-22)
-//    미락      22:30 까지가 마감. 그래서 22:25 에 보냅니다
-//              ⚠️ 22:30 이 지나면 아예 못 담습니다. 다음날로 안 넘깁니다
-//    나머지    00:25   (자정을 넘긴 시각 — 오전 8시 전은 전날 영업분입니다)
+//  🔴 2026-09-27 [v4.0] — 자동 발송을 껐습니다. 사람이 보냅니다
+//
+//  사장님 말:
+//    「무조건 식자재발주는 켤 거야. 미리 장바구니에 담아놓으면
+//      추후에 발주하는 데 도움이 되게끔만 사용되면 됨」
+//    「굳이 업체별로 시간 제한을 둘 필요 없을 것 같아. 단 알림만 오게끔」
+//
+//  ⚠️ 왜 바꿨나 — 2026-09-27 사진으로 확인된 사고
+//    바구니(서버)와 화면 체크(ST)가 따로 놀았습니다.
+//      마감체크 gr2 에서 온 대파 5   키 = 미락:대파:gr2
+//      마감체크 gl1 에서 온 대파 1   키 = 미락:대파:gl1
+//      발주앱에서 직접 체크한 대파 13 키 = 미락:대파:      ← 출처가 빔
+//    셋이 각각 살아남아 19가 될 판이었습니다.
+//    ⚠️ 게다가 미리보기는 화면 체크만 보여줘서 「대파 13」이라고 거짓말했습니다.
+//
+//  이제 이렇게 돕니다
+//    ① 앱을 열면 바구니를 화면 체크로 **가져옵니다** (cart_absorb)
+//       같은 품목은 출처가 달라도 합칩니다. 대파 5+1 → 6
+//       가져간 줄은 '흡수' 로 표시되어 두 번 들어가지 않습니다
+//    ② 사람이 보고 고칩니다 (6 → 13)
+//    ③ 「발주하기」를 누르면 그때 나갑니다 (cart_send)
+//       ⚠️ 시간 제한이 없습니다. 언제 눌러도 나갑니다
+//    ④ 나간 뒤 사장님께 카톡 요약이 갑니다
+//
+//  알림 (자동 발송 대신)
+//    21:30   미락 — 22:30 마감 전에 알립니다
+//    23:30   나머지
+//    ⚠️ 01041216995 로만 갑니다 (사장님 지정 2026-09-27)
+//
 //    주류      ⚠️ 바구니를 안 씁니다. 재고를 세어 그 자리에서 보냅니다
+//              사장님: 「주류는 지금처럼이 딱 좋아」
 //
 //  ── 고치지 않고 쌓기만 합니다 ─────────────────────────
 //    담기도 빼기도 보냄도 전부 새 줄입니다.
@@ -360,6 +388,24 @@ const CART_TIME_DEFAULT = { hour: 0, min: 25, nextDay: true, 마감: '00:30' };
 
 // ⚠️ 바구니를 안 쓰는 업체. 주류는 재고를 세어 그때그때 보냅니다.
 const CART_SKIP = ['주류'];
+
+// ── 🔔 발주 알림 [v4.0] 2026-09-27 ──────────────────────
+//
+//  자동 발송을 껐으므로 「넣으세요」를 알려주는 것이 유일한 안전장치입니다.
+//  ⚠️ 이게 안 오면 발주가 통째로 빠집니다. 여기를 지우지 마십시오.
+//
+//  사장님 지정: 01041216995 로만 보냅니다
+const CART_ALERT_PHONE = '01041216995';
+
+// 몇 시에 어느 업체를 알릴 것인가. 영업일 기준 시각입니다 (24시 = 자정)
+//   ⚠️ 미락은 22:30 이 업체 마감이라 21:30 에 알립니다. 한 시간 여유
+const CART_ALERTS = [
+  { hour: 21, min: 30, 업체들: ['미락'],  이름: '미락' },
+  { hour: 23, min: 30, 업체들: null,     이름: '나머지' },   // null = 미락 빼고 전부
+];
+
+// 한 번 알리고 안 보냈으면 이만큼 뒤에 한 번 더
+const CART_ALERT_REPEAT_MIN = 45;
 
 // ── 가져갈 것 알림 (2026-09-25) ────────────────────────
 //
@@ -612,19 +658,16 @@ function cartAdd(data) {
         거절.push(업체 + ' 은 바구니를 쓰지 않습니다');
         return;
       }
-      // ⚠️ 2026-09-25 — 마감이 지나도 거절하지 않습니다.
+      // ⚠️ [v4.0] 2026-09-27 — 시각에 따라 날짜를 옮기지 않습니다.
       //
-      //    사장님 말: 「00시 30분 지나서 마감체크리스트하면서 담기했는데
-      //               식자재발주 어플에는 다 잠겨있고 뭘 볼 수 없었어」
+      //    그전에는 「보낼 시각이 지났으면 다음 영업일로 넘김」이었습니다.
+      //    ⚠️ 미락은 22:25 에 나가는데 마감 작업은 00시 넘어서 합니다.
+      //       그래서 마감 중에 담은 미락 품목은 **언제나** 하루 늦었습니다.
+      //       게다가 no-cors 라 화면이 답장을 못 읽어 아무도 몰랐습니다.
       //
-      //    마감 뒤에 떨어진 것을 알았는데 담을 데가 없으면 그냥 잊힙니다.
-      //    그래서 담되 다음 영업일로 넘깁니다. 사라지지 않습니다.
+      //    이제 자동 발송이 없으므로 넘길 이유가 없습니다.
+      //    담긴 것은 그 영업일에 그대로 남고, 사람이 앱에서 보고 보냅니다.
       var 담을영업일 = biz;
-      if (cartSendAt_(biz, 업체).getTime() <= now.getTime()) {
-        담을영업일 = new Date(biz);
-        담을영업일.setDate(담을영업일.getDate() + 1);
-        넘김.push(업체);
-      }
       rows.push([now, formatDate(담을영업일), 지점, 업체, String(it.item || ''),
                  String(it.qty || ''), '담김', String(data.device || ''),
                  String(it.src || '')]);
@@ -679,6 +722,8 @@ function getCart(dateStr) {
   const 담긴것 = [];
   const 보냄  = {};
   const 알림  = {};   // 「가져갈 것」을 이미 알린 업체
+  const 발주알림  = {};   // [v4.0] 「발주 넣으세요」를 알린 시각 (영업일 기준 분)
+  const 발주알림두번 = {};
 
   for (let i = rows.length - 1; i >= 0; i--) {
     const r = rows[i];
@@ -699,12 +744,27 @@ function getCart(dateStr) {
       if (!알림[업체]) 알림[업체] = rowHHMM_(r[0]);
       continue;
     }
+    // ⚠️ [v4.0] 「발주 넣으세요」 알림 기록. 품목이 아니므로 목록에는 안 넣습니다.
+    //    업체 칸에 알림 이름(미락/나머지)이 들어 있습니다.
+    if (상태 === '알림' || 상태 === '알림(실패)') {
+      const h = rowHHMM_(r[0]);                      // 'HH:MM'
+      if (h) {
+        const hh = parseInt(h.slice(0, 2), 10);
+        const 분 = (hh < BIZ_DAY_START_HOUR ? hh + 24 : hh) * 60 + parseInt(h.slice(3), 10);
+        if (발주알림[업체] === undefined) 발주알림[업체] = 분;
+        else 발주알림두번[업체] = true;               // 두 번째 줄이 있으면 이미 두 번 알린 것
+      }
+      continue;
+    }
 
     // ⚠️ 출처까지 넣어야 같은 품목이 여러 자리에서 와도 따로 셉니다 (대파)
     const 키 = 업체 + ':' + String(r[4]) + ':' + String(r[8] || '');
     if (본것[키]) continue;               // 더 최근 줄을 이미 잡았습니다
     본것[키] = true;
-    if (상태 !== '담김') continue;         // 마지막이 「뺌」이면 빠진 것입니다
+    // ⚠️ [v4.0] '흡수' = 발주앱 화면이 이미 가져간 것입니다.
+    //    화면 체크에 들어가 있으므로 바구니에서는 빠져야 합니다.
+    //    안 그러면 화면 13 + 바구니 6 이 되어 19가 나갑니다 (26-09-27 사고)
+    if (상태 !== '담김') continue;         // 마지막이 「뺌」·'흡수'·'보냄'이면 빠진 것입니다
 
     담긴것.push({
       supplier: 업체,
@@ -718,7 +778,108 @@ function getCart(dateStr) {
 
   담긴것.reverse();   // 담은 순서대로
   return { ok: true, date: date, items: 담긴것, sent: 보냄,
-           notified: 알림, deadlines: cartDeadlines_(biz) };
+           notified: 알림, alerted: 발주알림, alertedTwice: 발주알림두번,
+           deadlines: cartDeadlines_(biz) };
+}
+
+// ══════════════════════════════════════════════════════════
+//  [v4.0] 흡수 — 화면이 바구니를 가져갑니다   2026-09-27
+//
+//  발주앱을 열면 바구니에 있는 것을 화면 체크로 옮깁니다.
+//  ⚠️ 옮긴 줄은 '흡수' 로 표시해 바구니에서 뺍니다.
+//     안 그러면 화면과 바구니에 같은 것이 둘 다 남아 두 배로 나갑니다.
+//
+//  ⚠️ 같은 품목은 출처가 달라도 합칩니다 — 그건 화면 쪽에서 합니다.
+//     여기서는 「가져갔다」는 사실만 기록합니다.
+// ══════════════════════════════════════════════════════════
+function cartAbsorb(data) {
+  return cartLock_(function () {
+    const now  = new Date();
+    const biz  = getBusinessDate(now);
+    const 오늘  = formatDate(biz);
+    const cart = getCart(오늘);
+
+    if (!cart.items.length) return jsonResponse({ ok: true, absorbed: 0, items: [] });
+
+    // 주류는 바구니를 안 쓰므로 여기 올 일이 없지만, 혹시 섞이면 남겨둡니다
+    const 가져갈것 = cart.items.filter(function (it) {
+      return CART_SKIP.indexOf(it.supplier) < 0;
+    });
+    if (!가져갈것.length) return jsonResponse({ ok: true, absorbed: 0, items: [] });
+
+    const sheet = getCartSheet_();
+    const rows = 가져갈것.map(function (it) {
+      return [now, 오늘, '백석점', it.supplier, it.item, it.qty,
+              '흡수', String(data.device || ''), it.src];
+    });
+    sheet.getRange(sheet.getLastRow() + 1, 1, rows.length, 9).setValues(rows);
+
+    console.log('바구니 흡수: ' + rows.length + '건 → ' + String(data.device || ''));
+    return jsonResponse({ ok: true, absorbed: rows.length, items: 가져갈것 });
+  });
+}
+
+// ══════════════════════════════════════════════════════════
+//  [v4.0] 사람이 보내기   2026-09-27
+//
+//  ⚠️ 시간 제한이 없습니다. 사장님: 「굳이 업체별로 시간 제한을 둘 필요 없을 것 같아」
+//  ⚠️ 화면이 보내준 목록을 그대로 믿습니다. 사람이 보고 확정한 것이기 때문입니다.
+//     자동 발송 때와 달리 바구니를 다시 읽어 합치지 않습니다 — 그러면 또 두 배가 됩니다.
+// ══════════════════════════════════════════════════════════
+function cartSend(data) {
+  const items = data.items || [];
+  if (!items.length) return jsonResponse({ ok: false, message: '보낼 것이 없습니다' });
+
+  const now = new Date();
+  const biz = getBusinessDate(now);
+  const 오늘 = formatDate(biz);
+
+  // 업체별로 묶습니다
+  const 업체별 = {};
+  const 순서   = [];
+  items.forEach(function (it) {
+    const 업체 = String(it.supplier || '');
+    if (!업체) return;
+    if (!업체별[업체]) { 업체별[업체] = []; 순서.push(업체); }
+    업체별[업체].push(it);
+  });
+
+  const 결과 = [];
+  const 실패 = [];
+  const 요약 = [];
+
+  순서.forEach(function (업체) {
+    const r = sendCartFor_(업체, 업체별[업체], 오늘, biz, String(data.device || ''));
+    결과.push({ supplier: 업체, ok: r.ok });
+    if (!r.ok) 실패.push(업체 + ': ' + (r.message || '알 수 없음'));
+    else 요약.push(r.body);
+  });
+
+  // ── 사장님께 카톡 요약 (사장님 요청 2026-09-27) ──
+  //    ⚠️ 문자가 진짜 나간 것만 넣습니다. 실패한 것을 「보냈다」고 하면 안 됩니다.
+  if (요약.length) 사장님요약_(오늘, 요약, 실패);
+
+  return jsonResponse({ ok: !실패.length, results: 결과, failed: 실패 });
+}
+
+// ── 사장님께 「오늘 무엇이 나갔나」 ───────────────────────
+//
+//  사장님 말: 「문자가 솔라피를 통해 정확히 보내졌으면 이를 다 정리해서
+//              몇월 몇일 발주목록을 정리한 것들이 카톡으로 오게끔」
+//
+//  ⚠️ 알림톡 템플릿(ORDER_REPORT)은 고기 발주용 변수를 요구합니다.
+//     식자재에는 안 맞아서 LMS 로 보냅니다. 「가져갈 것」 알림이 쓰는 길과 같습니다.
+function 사장님요약_(오늘, 보낸것들, 실패) {
+  try {
+    let body = '[백석점 발주 완료 ' + 오늘 + ']\n\n' + 보낸것들.join('\n\n');
+    if (실패.length) body += '\n\n⚠️ 실패: ' + 실패.join(' / ');
+    const r = sendFoodSms(CART_ALERT_PHONE, body,
+                          getByteLen(body) > CONFIG.FOOD.SMS_MAX_BYTES ? 'LMS' : 'SMS');
+    if (!r.ok) console.log('사장님 요약 실패: ' + (r.message || ''));
+  } catch (err) {
+    // ⚠️ 여기서 막혀도 발주는 이미 나갔습니다. 전체를 죽이지 않습니다.
+    console.log('사장님 요약 중 오류: ' + err.message);
+  }
 }
 
 function cartDeadlines_(biz) {
@@ -759,36 +920,81 @@ function 바구니트리거걸기() {
   console.log('✅ 5분마다 바구니를 확인하는 트리거를 걸었습니다');
 }
 
+// ══════════════════════════════════════════════════════════
+//  [v4.0] 5분마다 도는 트리거 — 🔴 이제 문자를 보내지 않습니다
+//
+//  ⚠️ 2026-09-27 부터 발주는 사람이 앱에서 「발주하기」를 눌러야 나갑니다.
+//     여기는 「넣으세요」를 알리기만 합니다.
+//
+//  ⚠️ 이 알림이 자동 발송을 대신하는 유일한 안전장치입니다.
+//     안 오면 발주가 통째로 빠집니다. 함부로 끄지 마십시오.
+//
+//  ⚠️ 트리거 이름은 그대로 둡니다 (sendCartDue).
+//     바꾸면 이미 걸려 있는 트리거가 죽은 함수를 불러 조용히 아무 일도 안 합니다.
+// ══════════════════════════════════════════════════════════
 function sendCartDue() {
   const now = new Date();
   const biz = getBusinessDate(now);
   const 오늘 = formatDate(biz);
   const cart = getCart(오늘);
+  const 시각 = getBusinessHour(now) * 60 + now.getMinutes();   // 영업일 기준 분
 
-  if (!cart.items.length) return;   // 담긴 게 없으면 조용히 끝냅니다
+  // ── ① 발주 넣으라는 알림 ──
+  CART_ALERTS.forEach(function (a) {
+    const 알릴때 = a.hour * 60 + a.min;
+    if (시각 < 알릴때) return;
 
-  // 업체별로 묶습니다
+    // 그 알림이 맡은 업체 중 아직 안 보낸 것
+    const 대상 = {};
+    cart.items.forEach(function (it) {
+      if (CART_SKIP.indexOf(it.supplier) >= 0) return;
+      if (cart.sent[it.supplier]) return;                       // 이미 보냈습니다
+      const 미락인가 = (it.supplier === '미락');
+      const 맡았나 = a.업체들 ? (a.업체들.indexOf(it.supplier) >= 0) : !미락인가;
+      if (맡았나) {
+        if (!대상[it.supplier]) 대상[it.supplier] = 0;
+        대상[it.supplier]++;
+      }
+    });
+    const 업체들 = Object.keys(대상);
+    if (!업체들.length) return;                                  // 담긴 게 없으면 조용히
+
+    // 이미 알렸나 — 처음이면 보내고, 45분이 지났으면 한 번 더
+    const 전에 = cart.alerted && cart.alerted[a.이름];
+    if (전에 !== undefined && 전에 !== null) {
+      if (시각 - 전에 < CART_ALERT_REPEAT_MIN) return;
+      if (cart.alertedTwice && cart.alertedTwice[a.이름]) return;  // 두 번이면 그만
+    }
+
+    const 줄 = 업체들.map(function (s) { return s + ' ' + 대상[s] + '건'; }).join(' · ');
+    const body = '🔔 발주 넣으세요\n' + 줄 +
+                 '\n\n앱에서 확인하고 「발주하기」를 눌러주세요.' +
+                 (a.이름 === '미락' ? '\n⚠️ 미락은 22:30 이 마감입니다.' : '');
+    const r = sendFoodSms(CART_ALERT_PHONE, body,
+                          getByteLen(body) > CONFIG.FOOD.SMS_MAX_BYTES ? 'LMS' : 'SMS');
+
+    cartLock_(function () {
+      getCartSheet_().appendRow([now, 오늘, '백석점', a.이름, body, '',
+                                 r.ok ? '알림' : '알림(실패)', 'server', '']);
+    });
+    console.log('발주 알림(' + a.이름 + '): ' + 줄 + ' → ' + (r.ok ? '보냄' : '실패'));
+  });
+
+  // ── ② 가져갈 것 알림 (사장님 탭) ──
+  //    ⚠️ 발주 문자가 이미 나간 뒤에만 보냅니다.
+  //       안 나간 것을 「가져가세요」 하면 헛걸음입니다.
   const 업체별 = {};
   cart.items.forEach(function (it) {
     if (!업체별[it.supplier]) 업체별[it.supplier] = [];
     업체별[it.supplier].push(it);
   });
-
-  Object.keys(업체별).forEach(function (업체) {
-    // ── 발주 문자 ──
-    if (!cart.sent[업체] && cartSendAt_(biz, 업체).getTime() <= now.getTime()) {
-      sendCartFor_(업체, 업체별[업체], 오늘, biz);
-      return;
-    }
-
-    // ── 가져갈 것 알림 (사장님 탭) ──
-    //    ⚠️ 발주 문자가 이미 나간 뒤에만 보냅니다.
-    //       안 나간 것을 「가져가세요」 하면 헛걸음입니다.
+  Object.keys(CART_NOTIFY).forEach(function (업체) {
     if (!cart.sent[업체]) return;
-    if (cart.notified[업체]) return;                    // 이미 알렸습니다
+    if (cart.notified[업체]) return;
     const 알릴때 = cartNotifyAt_(biz, 업체);
     if (!알릴때 || 알릴때.getTime() > now.getTime()) return;
-    sendPickupNotice_(업체, 업체별[업체], 오늘, biz);
+    // ⚠️ 보낸 뒤라 바구니에서는 빠졌습니다. 보낸 줄에서 내용을 찾습니다.
+    sendPickupNotice_(업체, 업체별[업체] || [], 오늘, biz);
   });
 }
 
@@ -827,7 +1033,9 @@ function sendPickupNotice_(업체, items, 오늘, biz) {
   else console.log('가져갈 것 알림 보냄: ' + 업체 + ' / ' + body);
 }
 
-function sendCartFor_(업체, items, 오늘, biz) {
+// ⚠️ [v4.0] 결과를 돌려줍니다 — cartSend 가 사장님 요약을 만들 때 씁니다.
+//    { ok, body, message }
+function sendCartFor_(업체, items, 오늘, biz, device) {
   // ⚠️ 같은 품목을 합칩니다. 출처가 달라도 업체에게는 한 줄로 가야 합니다.
   //    라면용대파 1 + 대파김치 5  →  「대파 6」
   const 합 = {};
@@ -848,17 +1056,17 @@ function sendCartFor_(업체, items, 오늘, biz) {
 
   if (!phone) {
     alertFailure('바구니 발송 실패 — 전화번호 없음', 업체 + ' / ' + body, '전화번호가 비어 있습니다');
-    return;
+    return { ok: false, body: body, message: '전화번호가 비어 있습니다' };
   }
 
   const r = sendFoodSms(phone, body, channel);
 
   // ⚠️ 보냈다는 표시를 먼저 남깁니다. 실패했어도 남깁니다.
-  //    안 남기면 5분 뒤에 또 보냅니다 — 그게 바로 막으려던 일입니다.
+  //    안 남기면 또 보냅니다 — 그게 바로 막으려던 일입니다.
   cartLock_(function () {
     const sheet = getCartSheet_();
     sheet.appendRow([new Date(), 오늘, '백석점', 업체, body, '',
-                     r.ok ? '보냄' : '보냄(실패)', 'server', '']);
+                     r.ok ? '보냄' : '보냄(실패)', device || 'server', '']);
   });
 
   logFoodOrderToSheet(오늘, [{ supplier: 업체, body: body, channel: channel,
@@ -869,6 +1077,7 @@ function sendCartFor_(업체, items, 오늘, biz) {
   } else {
     console.log('바구니 발송 완료: ' + 업체 + ' / ' + body);
   }
+  return { ok: r.ok, body: body, message: r.message };
 }
 
 function formatDateShort_(d) {
