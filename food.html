@@ -802,18 +802,20 @@ function init() {
   updateBar();
   주류합계그리기_();
 
-  // ── 바구니 [v4.0] 2026-09-27 ───────────────────────
-  //    ⚠️ 바구니를 「보여주기」가 아니라 「화면 체크로 가져오기」로 바꿨습니다.
-  //       그전에는 바구니와 화면 체크가 따로 놀아서 같은 대파가 세 개로 갈라졌습니다.
+  // ── 바구니 [v5.0] 2026-09-27 ───────────────────────
+  //    ⚠️ 바구니가 유일한 진실입니다. 화면은 그것을 비춥니다.
+  //       두 폰이 같은 것을 봅니다 — 체크도 서로 보입니다.
   탭잠금_();
   휴무읽기_();
-  바구니가져오기_();
+  서버맞추기_();
   setInterval(function () {
-    if (document.visibilityState === 'visible') { 바구니가져오기_(); }
-  }, 30000);
+    if (document.visibilityState === 'visible') 서버맞추기_();
+  }, 15000);
   document.addEventListener('visibilitychange', function () {
-    if (document.visibilityState === 'visible') 바구니가져오기_();
+    if (document.visibilityState === 'visible') 서버맞추기_();
   });
+  // ⚠️ 앱을 닫기 전에 올릴 게 남아 있으면 마저 올립니다
+  window.addEventListener('pagehide', function () { clearTimeout(올리기T); 올리기_(); });
 }
 
 // ═══════════════════════════════════════════════════
@@ -872,13 +874,16 @@ function toggleAllActive() {
   const sup = SUPS.find(s => s.key === activeSup);
   if (!sup || sup.qty || 섞인업체_(sup)) return;
   const allOn = sup.items.every(item => ST[sup.key + ':' + item].on);
+  const 바뀐것 = [];
   sup.items.forEach(item => {
     const key = sup.key + ':' + item;
     ST[key].on  = !allOn;
     if (allOn) ST[key].qty = '';
+    바뀐것.push(key);
     저장();
     updateChip(key);
   });
+  서버에정하기_(바뀐것);          // [v5.0] 한 번에 올립니다
   updateBadge(sup.key);
   updateBar();
   document.getElementById('sib-all-btn').textContent = allOn ? '전체 선택' : '전체 해제';
@@ -891,6 +896,7 @@ function toggleChip(key, supKey) {
   ST[key].on  = !ST[key].on;
   ST[key].qty = '';
   저장();
+  서버에정하기_([key]);          // [v5.0] 다른 폰에도 보이게
   updateChip(key);
   updateBadge(supKey);
   updateBar();
@@ -947,6 +953,7 @@ function stpConfirm() {
     ST[sKey].on  = sQty > 0;
     ST[sKey].qty = sQty > 0 ? String(sQty) : '';
     저장();
+    서버에정하기_([sKey]);        // [v5.0] 사람이 정한 값 — 앞의 것을 대체합니다
     updateChip(sKey);
     updateBadge(supKey);
     updateBar();
@@ -1271,7 +1278,105 @@ function 바구니새로고침_() {
 }
 
 // ══════════════════════════════════════════════════════
-//  [v4.0] 바구니를 화면 체크로 가져옵니다   2026-09-27
+//  [v5.0] 체크를 서버에 둡니다   2026-09-27
+//
+//  ⚠️ 왜 또 바꿨나 — v4.0 을 쓰자마자 나온 문제
+//    ① 「흡수」는 먼저 연 폰이 바구니를 독점했습니다
+//         a폰이 열면 가져가고 바구니를 비움 → b폰은 빈손, 토스트도 안 뜸
+//    ② 체크(ST)는 여전히 localStorage 라 폰끼리 안 보였습니다
+//         a폰에서 사장님 체크, b폰에서 네이버 체크 → 서로 모름
+//
+//  ⚠️ 뿌리는 늘 같습니다 — 같은 것을 두 곳에 두었습니다.
+//     이제 **바구니가 유일한 진실**입니다. 화면은 그것을 비춥니다.
+//
+//  어떻게 도나
+//    체크를 누른다  →  화면 먼저 바뀝니다 (기다리지 않습니다)
+//                  →  0.8초 모았다가 서버에 cart_set 한 번
+//    15초마다      →  서버를 읽어 화면을 맞춥니다
+//                     ⚠️ 내가 방금 누른 뒤 6초는 건너뜁니다.
+//                        아직 안 올라간 내 조작을 옛 값으로 덮으면 안 됩니다
+//
+//  ⚠️ 주류는 바구니를 안 씁니다 (바구니제외). 손대지 않습니다.
+// ══════════════════════════════════════════════════════
+let 올릴것   = [];
+let 올리기T  = null;
+let 마지막조작 = 0;
+
+// 체크가 바뀌면 부릅니다 — 화면은 이미 바뀐 뒤입니다
+function 서버에정하기_(keys) {
+  마지막조작 = Date.now();
+  keys.forEach(function (k) {
+    const i = k.indexOf(':');
+    const 업체 = k.slice(0, i), 품목 = k.slice(i + 1);
+    if (바구니제외.indexOf(업체) >= 0) return;     // 주류는 안 올립니다
+    const s = ST[k] || {};
+    올릴것 = 올릴것.filter(function (x) {           // 같은 품목은 마지막 것만
+      return !(x.supplier === 업체 && x.item === 품목);
+    });
+    올릴것.push({ supplier: 업체, item: 품목,
+                  qty: s.on ? (s.qty || '') : '', off: !s.on,
+                  phone: CFG.PHONES[업체] || '' });
+  });
+  clearTimeout(올리기T);
+  올리기T = setTimeout(올리기_, 800);              // 연타해도 한 번만 올라갑니다
+}
+
+function 올리기_() {
+  if (!올릴것.length) return;
+  const 보낼것 = 올릴것;
+  올릴것 = [];
+  try {
+    // ⚠️ 답장을 안 기다립니다 (no-cors). 화면은 이미 반영됐습니다.
+    //    못 올라갔으면 15초 뒤 서버맞추기_ 가 옛 값으로 되돌려 알려줍니다.
+    fetch(CFG.GAS_URL, {
+      method: 'POST', mode: 'no-cors',
+      headers: { 'Content-Type': 'text/plain;charset=utf-8' },
+      body: JSON.stringify({ type: 'cart_set', device: 폰번호, items: 보낼것 }),
+    }).catch(function () {});
+  } catch (e) {}
+}
+
+// 서버를 읽어 화면을 맞춥니다
+async function 서버맞추기_() {
+  // ⚠️ 내가 방금 누른 것이 아직 안 올라갔을 수 있습니다. 그때는 건너뜁니다.
+  if (Date.now() - 마지막조작 < 6000) return;
+  if (올릴것.length) return;                       // 올릴 게 남아 있으면 나중에
+
+  const res = await 바구니읽기_();
+  if (!res || !res.ok) return;
+
+  보낸업체표 = res.sent || {};
+  바구니 = res.items || [];
+
+  const 서버것 = {};
+  바구니.forEach(function (b) { 서버것[b.supplier + ':' + b.item] = b; });
+
+  let 바뀜 = 0;
+  Object.keys(ST).forEach(function (k) {
+    const 업체 = k.slice(0, k.indexOf(':'));
+    if (바구니제외.indexOf(업체) >= 0) return;      // ⚠️ 주류는 건드리지 않습니다
+    const b = 서버것[k];
+    const 켤까 = !!b;
+    const 수량 = b ? (b.qty || '') : '';
+    if (!!ST[k].on === 켤까 && String(ST[k].qty || '') === String(수량)) return;
+    ST[k] = { on: 켤까, qty: 수량, stock: ST[k].stock };
+    updateChip(k);
+    바뀜++;
+  });
+
+  if (바뀜) {
+    저장();
+    SUPS.forEach(function (s) { updateBadge(s.key); });
+    updateBar();
+    updateInfoBar(activeSup);
+  }
+  바구니그리기_();
+  탭잠금_();
+}
+
+// ══════════════════════════════════════════════════════
+//  [v4.0] ⚠️ 쓰지 않습니다 — 먼저 연 폰이 바구니를 독점했습니다
+//     옛 화면이 캐시된 폰을 위해 남겨두지만 부르지 마십시오.
 //
 //  ⚠️ 왜 만들었나 — 2026-09-27 사진으로 확인된 사고
 //    바구니(서버)와 화면 체크(ST)가 따로 놀았습니다.
@@ -1489,9 +1594,8 @@ function 휴무읽기_() {
 //             「굳이 업체별로 시간 제한을 둘 필요 없을 것 같아」
 //
 //  ⚠️ 시간 제한이 없습니다. 언제 눌러도 나갑니다.
-//  ⚠️ 화면에 보이는 것이 그대로 나갑니다. 바구니를 다시 합치지 않습니다.
-//     바구니는 앱을 열 때 이미 화면으로 가져왔습니다 (바구니가져오기_).
-//     여기서 또 합치면 두 배가 됩니다 — 그게 26-09-27 사고였습니다.
+//  ⚠️ [v5.0] 화면 = 서버입니다. 체크할 때마다 서버에 올라가 있습니다.
+//     여기서 바구니를 다시 합치면 두 배가 됩니다 — 그게 26-09-27 사고였습니다.
 // ══════════════════════════════════════════════════════
 async function 담기() {
   const msgs = buildMsgs();
@@ -1511,27 +1615,18 @@ async function 담기() {
     sup.items.forEach(function (i) {
       const k = sup.key + ':' + i;
       if (!ST[k] || !ST[k].on) return;
-      items.push({ supplier: sup.key, item: i, qty: ST[k].qty || '' });
+      // ⚠️ 번호를 같이 보냅니다. 서버 CONFIG 의 번호는 한때 전부 사장님 번호였습니다 (26-09-27)
+      items.push({ supplier: sup.key, item: i, qty: ST[k].qty || '',
+                   phone: CFG.PHONES[sup.key] || '' });
     });
   });
 
   // ⚠️ 주류는 바구니를 안 씁니다. 예전처럼 재고를 세어 바로 보냅니다.
   if (주류것.length && !items.length) return submitAll();
 
-  // ── 다른 폰이 방금 담은 게 있으면 먼저 알립니다 ──
-  //    ⚠️ 보낸 뒤에 들어온 것은 다음 발주까지 기다려야 합니다. 그 전에 알려야 합니다.
-  const 새로 = await 새로담긴것_();
-  if (새로.length) {
-    if (!confirm('⚠️ 방금 ' + 새로.length + '건이 더 담겼습니다.\n\n' +
-                 새로.slice(0, 8).join('\n') +
-                 '\n\n이건 아직 화면에 없습니다.\n취소하고 확인하시겠습니까?\n\n' +
-                 '[확인] 취소하고 가져오기   [취소] 그냥 보내기')) {
-      // 그냥 보냅니다
-    } else {
-      await 바구니가져오기_();
-      return;
-    }
-  }
+  // ⚠️ [v5.0] 올릴 게 남아 있으면 먼저 올립니다. 그래야 서버와 화면이 같습니다.
+  clearTimeout(올리기T);
+  올리기_();
 
   const 요약 = items.map(function (it) {
     return it.supplier + ' · ' + it.item + (it.qty ? ' ' + it.qty : '');
@@ -1555,21 +1650,17 @@ async function 담기() {
   }
   hideLoading();
 
-  // 보냈으면 화면 체크를 비웁니다
+  // 보냈으면 화면 체크를 비웁니다 — 서버에도 「끔」으로 올립니다
+  const 비울것 = items.map(function (it) { return it.supplier + ':' + it.item; });
   보낸업체비우기(업체목록);
+  서버에정하기_(비울것);
+  clearTimeout(올리기T);
+  올리기_();
+  마지막조작 = 0;                 // 다음 맞추기를 건너뛰지 않게
   await 바구니새로고침_();
 
   if (주류것.length) await submitAll();   // 주류가 섞여 있으면 그것만 따로
   else 발송완료화면_(업체목록, 요약, 결과);
-}
-
-// 내가 화면에 가져온 뒤에 누가 더 담은 것이 있나
-async function 새로담긴것_() {
-  const res = await 바구니읽기_();
-  if (!res || !res.ok) return [];
-  return (res.items || [])
-    .filter(function (b) { return 바구니제외.indexOf(b.supplier) < 0; })
-    .map(function (b) { return b.supplier + ' · ' + b.item + (b.qty ? ' ' + b.qty : ''); });
 }
 
 // 담긴 업체의 체크만 비웁니다 (안 담긴 업체는 그대로 둬야 다시 담을 수 있습니다)
@@ -1653,7 +1744,8 @@ function 바구니그리기_() {
         }).join('') +
       '</div>';
     }).join('') +
-    '<div class="cart-foot">📥 마감체크에서 담긴 것입니다. 앱을 열면 위 체크로 들어옵니다<br>' +
+    // ⚠️ [v5.0] 이 목록은 위 체크와 같은 것입니다. 두 폰이 같이 봅니다.
+    '<div class="cart-foot">👥 위 체크와 같은 것입니다. 다른 폰에서 체크한 것도 보입니다<br>' +
     '⚠️ 문자는 「발주하기」를 눌러야 나갑니다. 자동으로 안 나갑니다</div>';
 }
 
@@ -1818,7 +1910,7 @@ init();
   <span><span class="rb-text">최신화</span><br><span class="rb-ver" id="rb-ver">v…</span></span>
 </div>
 <script>
-const APP_VERSION = '2026-09-27-v4';
+const APP_VERSION = '2026-09-27-v5';
 
 // ⚠️ 2026-09-22 — 버전 글자를 여기서 화면에 써넣습니다.
 //    그전에는 화면(HTML)과 코드(APP_VERSION) 두 군데에 따로 적혀 있었습니다.

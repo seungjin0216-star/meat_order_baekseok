@@ -92,16 +92,29 @@ const CONFIG = {
     SHEET_NAME     : '식자재발주',
     SMS_MAX_BYTES  : 90,
     LMS_MAX_BYTES  : 2000,
-    // 업체 전화번호 (숫자만, 하이픈 없이) — 확인 후 채워넣기
+    // ══════════════════════════════════════════════════════
+    //  🔴 업체 전화번호 — 여기가 진짜입니다 (2026-09-27 수정)
+    //
+    //  ⚠️ 그전에는 전부 'TODO' 로 사장님 번호(01041216995)가 들어 있었습니다.
+    //     화면(food.html CFG.PHONES)에만 진짜 번호가 있었고,
+    //     handleFoodOrder 는 앱이 보낸 번호를 먼저 보니 괜찮았습니다.
+    //     ⚠️ 그런데 바구니로 나가는 길(sendCartFor_)은 여기만 봅니다.
+    //        그래서 26-09-22 바구니 v3.0 이후 발주 문자가 전부 사장님 번호로 갔습니다.
+    //        업체는 아무것도 못 받았습니다. 아무도 몰랐습니다 — 또 조용한 실패입니다.
+    //
+    //  ⚠️ 번호를 바꿀 때는 food.html CFG.PHONES 도 같이 고치십시오.
+    //     두 곳에 있는 값입니다. 앱은 화면 표시에 씁니다.
+    // ══════════════════════════════════════════════════════
     PHONES: {
-      '미락'    : '01041216995',   // TODO
-      '콩나물'  : '01041216995',   // TODO
-      '원당'    : '01041216995',   // TODO
-      '네이버'  : '01041216995',   // TODO
+      '미락'    : '01089421859',
+      '콩나물'  : '01062333466',
+      '주류'    : '01056079640',
+      '음료수'  : '01037982411',
       '사장님'  : '01053226995',
-      '배달관련': '01041216995',   // TODO
-      '주류'    : '01041216995',   // TODO
-      '음료수'  : '01041216995',   // TODO
+      // 아래 셋은 사장님이 직접 사 오는 것들입니다. 사장님 번호가 맞습니다.
+      '원당'    : '01041216995',
+      '네이버'  : '01041216995',
+      '배달관련': '01041216995',
     },
   },
 
@@ -316,8 +329,9 @@ function doPost(e) {
     if (data.type === 'food_order') return handleFoodOrder(data); // [v2.0]
     if (data.type === 'cart_add')    return cartAdd(data);        // [v3.0] 담기
     if (data.type === 'cart_remove') return cartRemove(data);     // [v3.0] 빼기
-    if (data.type === 'cart_absorb') return cartAbsorb(data);     // [v4.0] 화면이 가져감
+    if (data.type === 'cart_absorb') return cartAbsorb(data);     // [v4.0] ⚠️ v5 에서 안 씁니다
     if (data.type === 'cart_send')   return cartSend(data);       // [v4.0] 사람이 보내기
+    if (data.type === 'cart_set')    return cartSet(data);        // [v5.0] 이 품목을 정확히 N 으로
     if (data.type === 'holiday_add')    return holidayAdd(data);     // [v3.1] 임시휴무
     if (data.type === 'holiday_remove') return holidayRemove(data);
     return jsonResponse({ ok: false, message: '알 수 없는 type' });
@@ -718,7 +732,12 @@ function getCart(dateStr) {
   const from = Math.max(2, last - 600 + 1);
   const rows = sheet.getRange(from, 1, last - from + 1, 9).getValues();
 
-  const 본것  = {};
+  const 본것  = {};   // 이 품목은 확정됐다 (더 안 본다)
+  const 더한것 = {};   // [v5.0] 확정 전까지 더한 수량
+  const 더했나 = {};   // [v5.0] ⚠️ 수량 0 인 토글 품목도 「담겼다」를 알아야 합니다
+  const 합계  = {};   // [v5.0] 최종 수량
+  const 정보  = {};   // [v5.0] 업체·품목 이름 등
+  const 계속  = {};   // [v5.0] false = 꺼진 품목
   const 담긴것 = [];
   const 보냄  = {};
   const 알림  = {};   // 「가져갈 것」을 이미 알린 업체
@@ -757,24 +776,68 @@ function getCart(dateStr) {
       continue;
     }
 
-    // ⚠️ 출처까지 넣어야 같은 품목이 여러 자리에서 와도 따로 셉니다 (대파)
-    const 키 = 업체 + ':' + String(r[4]) + ':' + String(r[8] || '');
-    if (본것[키]) continue;               // 더 최근 줄을 이미 잡았습니다
-    본것[키] = true;
-    // ⚠️ [v4.0] '흡수' = 발주앱 화면이 이미 가져간 것입니다.
-    //    화면 체크에 들어가 있으므로 바구니에서는 빠져야 합니다.
-    //    안 그러면 화면 13 + 바구니 6 이 되어 19가 나갑니다 (26-09-27 사고)
-    if (상태 !== '담김') continue;         // 마지막이 「뺌」·'흡수'·'보냄'이면 빠진 것입니다
+    // ══════════════════════════════════════════════════════
+    //  [v5.0] 품목 줄 — 업체:품목 으로만 봅니다. 출처는 안 나눕니다
+    //
+    //  ⚠️ v4.0 까지는 키에 출처(src)를 넣었습니다.
+    //     마감체크 네 곳(gl1·gl3·gl5·gr2)에서 온 대파를 각각 세려던 것이었는데,
+    //     발주앱에서 직접 체크한 대파(출처 빔)와 섞이면서 5+1+13=19 가 될 판이었습니다.
+    //     이제 합계만 맞으면 되므로 한 품목으로 봅니다.
+    //
+    //  뒤에서부터 보다가
+    //    '정함'(set) 을 만나면 그 값으로 확정하고 더 안 봅니다
+    //    '끔'  을 만나면 그 품목은 꺼진 것입니다
+    //    '담김'(add) 은 확정 전까지 계속 더합니다
+    //    '뺌'  을 만나면 그 품목을 뺍니다
+    // ══════════════════════════════════════════════════════
+    const 키 = 업체 + ':' + String(r[4]);
+    if (본것[키]) continue;               // 이미 확정된 품목입니다
+    if (상태 === '흡수') continue;         // ⚠️ v4.0 유산 — 무시합니다
 
-    담긴것.push({
-      supplier: 업체,
-      item    : String(r[4]),
-      qty     : String(r[5] || ''),
-      at      : rowHHMM_(r[0]),
-      device  : String(r[7] || ''),
-      src     : String(r[8] || ''),
-    });
+    // ⚠️ '끔' 은 그 시점까지만 지웁니다.
+    //    껐다가 다시 담은 것(더 나중 줄)은 살아야 합니다.
+    //    뒤에서부터 보므로, 여기 올 때 더한것 에 있는 것이 곧 「끈 뒤에 담긴 것」입니다.
+    if (상태 === '끔' || 상태 === '뺌') {
+      본것[키] = true;
+      if (더했나[키]) 합계[키] = 더한것[키] || 0;   // 끈 뒤에 다시 담겼습니다
+      else 계속[키] = false;
+      continue;
+    }
+
+    if (상태 === '정함') {
+      본것[키] = true;                     // 여기서 멈춥니다. 사람이 정한 값입니다
+      const n = parseFloat(r[5]);
+      const 앞 = 더한것[키] || 0;           // 확정 뒤에 온 add 들
+      합계[키] = ((isFinite(n) && n > 0) ? n : 0) + 앞;
+      정보[키] = { supplier: 업체, item: String(r[4]), at: rowHHMM_(r[0]),
+                   device: String(r[7] || ''), phone: '' };
+      continue;
+    }
+
+    if (상태 === '담김') {
+      if (계속[키] === false) continue;    // 이미 꺼진 품목입니다
+      const n = parseFloat(r[5]);
+      더한것[키] = (더한것[키] || 0) + ((isFinite(n) && n > 0) ? n : 0);
+      더했나[키] = true;
+      if (!정보[키]) {
+        정보[키] = { supplier: 업체, item: String(r[4]), at: rowHHMM_(r[0]),
+                     device: String(r[7] || ''), phone: '' };
+      }
+    }
   }
+
+  // 확정이 안 된 품목은 더한 값이 곧 합계입니다
+  Object.keys(더했나).forEach(function (키) {
+    if (합계[키] === undefined && 계속[키] !== false) 합계[키] = 더한것[키] || 0;
+  });
+
+  Object.keys(합계).forEach(function (키) {
+    const i = 정보[키];
+    if (!i) return;
+    담긴것.push({ supplier: i.supplier, item: i.item,
+                  qty: 합계[키] > 0 ? String(합계[키]) : '',
+                  at: i.at, device: i.device, src: '' });
+  });
 
   담긴것.reverse();   // 담은 순서대로
   return { ok: true, date: date, items: 담긴것, sent: 보냄,
@@ -783,7 +846,60 @@ function getCart(dateStr) {
 }
 
 // ══════════════════════════════════════════════════════════
-//  [v4.0] 흡수 — 화면이 바구니를 가져갑니다   2026-09-27
+//  [v5.0] 체크를 서버에 둡니다   2026-09-27
+//
+//  ⚠️ 왜 또 바꿨나 — v4.0 을 쓰자마자 나온 문제
+//    「흡수」는 먼저 연 폰이 바구니를 독점했습니다.
+//      a폰이 열면 → 가져가고 바구니를 비움 → b폰은 빈손
+//    그리고 체크 자체(ST)는 여전히 localStorage 라 폰끼리 안 보였습니다.
+//      a폰에서 사장님 체크, b폰에서 네이버 체크 → 서로 모름
+//
+//  ⚠️ 뿌리는 늘 같습니다 — 같은 것을 두 곳에 두었습니다.
+//     체크(폰)와 바구니(서버)를 하나로 합칩니다. 바구니가 유일한 진실입니다.
+//
+//  두 가지 쓰기가 있습니다
+//    cart_add   더하기   마감체크 🛒 가 씁니다. 대파 5 담고 1 더 담으면 6
+//    cart_set   확정     발주앱에서 사람이 숫자를 정한 것. 앞의 것을 대체합니다
+//
+//  읽을 때 (getCart)
+//    품목마다 뒤에서부터 봅니다.
+//    'set' 을 만나면 그 값에서 멈추고, 그 뒤에 온 'add' 들만 더합니다.
+//      add 5, add 1        → 6
+//      add 5, add 1, set 13 → 13        사람이 정한 값이 이깁니다
+//      add 5, set 13, add 2 → 15        그 뒤에 새로 필요해진 것만 더합니다
+// ══════════════════════════════════════════════════════════
+function cartSet(data) {
+  return cartLock_(function () {
+    const items = data.items || [];
+    if (!items.length) return jsonResponse({ ok: false, message: '정할 것이 없습니다' });
+
+    const now = new Date();
+    const biz = getBusinessDate(now);
+    const 지점 = (typeof BRANCH !== 'undefined') ? BRANCH : '백석점';
+    const rows = [];
+
+    items.forEach(function (it) {
+      const 업체 = String(it.supplier || '');
+      if (!업체 || CART_SKIP.indexOf(업체) >= 0) return;   // 주류는 바구니를 안 씁니다
+      rows.push([now, formatDate(biz), 지점, 업체, String(it.item || ''),
+                 String(it.qty === undefined || it.qty === null ? '' : it.qty),
+                 it.off ? '끔' : '정함',              // ⚠️ 체크를 끈 것도 기록입니다
+                 String(data.device || ''), '']);
+    });
+
+    if (rows.length) {
+      const sheet = getCartSheet_();
+      sheet.getRange(sheet.getLastRow() + 1, 1, rows.length, 9).setValues(rows);
+    }
+    return jsonResponse({ ok: true, set: rows.length });
+  });
+}
+
+// ══════════════════════════════════════════════════════════
+//  [v4.0] 흡수 — ⚠️ v5.0 부터 쓰지 않습니다
+//
+//  옛 화면이 캐시된 폰이 부를 수 있어 남겨둡니다.
+//  ⚠️ 새로 부르지 마십시오. 먼저 연 폰이 바구니를 독점합니다.
 //
 //  발주앱을 열면 바구니에 있는 것을 화면 체크로 옮깁니다.
 //  ⚠️ 옮긴 줄은 '흡수' 로 표시해 바구니에서 뺍니다.
@@ -1052,11 +1168,23 @@ function sendCartFor_(업체, items, 오늘, biz, device) {
   const 머리 = '[백석점 발주 ' + formatDateShort_(biz) + '] ';
   const body = 머리 + 본문조각.join(', ');
   const channel = getByteLen(body) > CONFIG.FOOD.SMS_MAX_BYTES ? 'LMS' : 'SMS';
-  const phone = String(CONFIG.FOOD.PHONES[업체] || '').replace(/-/g, '');
+  // ⚠️ 앱이 보낸 번호를 먼저 씁니다 (handleFoodOrder 와 같은 규칙).
+  //    26-09-27 까지 여기만 CONFIG 를 먼저 봐서 사장님 번호로 나갔습니다.
+  const 앱번호 = items.length ? String(items[0].phone || '') : '';
+  const phone = (앱번호 || String(CONFIG.FOOD.PHONES[업체] || '')).replace(/-/g, '');
 
   if (!phone) {
     alertFailure('바구니 발송 실패 — 전화번호 없음', 업체 + ' / ' + body, '전화번호가 비어 있습니다');
     return { ok: false, body: body, message: '전화번호가 비어 있습니다' };
+  }
+
+  // ⚠️ 사장님 번호로 나가려 하면 한 번 더 확인합니다.
+  //    사장님이 직접 사 오는 셋(원당·네이버·배달관련·사장님) 말고는 사고입니다.
+  const 사장님것 = ['원당', '네이버', '배달관련', '사장님'];
+  if (phone === CART_ALERT_PHONE && 사장님것.indexOf(업체) < 0) {
+    console.log('⚠️ ' + 업체 + ' 발주가 사장님 번호로 나갑니다 — 번호 설정을 확인하세요');
+    alertFailure('⚠️ 업체 번호가 사장님 번호입니다 (' + 업체 + ')', body,
+                 'CONFIG.FOOD.PHONES 와 food.html CFG.PHONES 를 확인하세요');
   }
 
   const r = sendFoodSms(phone, body, channel);
