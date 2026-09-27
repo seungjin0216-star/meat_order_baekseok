@@ -719,6 +719,15 @@ function cartRemove(data) {
 
 // ── 지금 담겨 있는 것 ────────────────────────────────────
 //    품목마다 마지막 줄만 봅니다. 마지막이 「담김」이면 담긴 것입니다.
+// 출처별 수량을 더합니다. { gl1:1, gl3:1, gr2:5 } → 7
+// ⚠️ 같은 출처를 둘이 눌러도 한 번만 셉니다 (마지막 값만 담겨 있습니다)
+function 출처합_(출처별) {
+  if (!출처별) return 0;
+  let s = 0;
+  Object.keys(출처별).forEach(function (k) { s += 출처별[k] || 0; });
+  return s;
+}
+
 function getCart(dateStr) {
   const now  = new Date();
   const biz  = getBusinessDate(now);
@@ -799,7 +808,7 @@ function getCart(dateStr) {
     //    뒤에서부터 보므로, 여기 올 때 더한것 에 있는 것이 곧 「끈 뒤에 담긴 것」입니다.
     if (상태 === '끔' || 상태 === '뺌') {
       본것[키] = true;
-      if (더했나[키]) 합계[키] = 더한것[키] || 0;   // 끈 뒤에 다시 담겼습니다
+      if (더했나[키]) 합계[키] = 출처합_(더한것[키]);   // 끈 뒤에 다시 담겼습니다
       else 계속[키] = false;
       continue;
     }
@@ -807,7 +816,7 @@ function getCart(dateStr) {
     if (상태 === '정함') {
       본것[키] = true;                     // 여기서 멈춥니다. 사람이 정한 값입니다
       const n = parseFloat(r[5]);
-      const 앞 = 더한것[키] || 0;           // 확정 뒤에 온 add 들
+      const 앞 = 출처합_(더한것[키]);        // 확정 뒤에 온 add 들
       합계[키] = ((isFinite(n) && n > 0) ? n : 0) + 앞;
       정보[키] = { supplier: 업체, item: String(r[4]), at: rowHHMM_(r[0]),
                    device: String(r[7] || ''), phone: '' };
@@ -816,8 +825,26 @@ function getCart(dateStr) {
 
     if (상태 === '담김') {
       if (계속[키] === false) continue;    // 이미 꺼진 품목입니다
-      const n = parseFloat(r[5]);
-      더한것[키] = (더한것[키] || 0) + ((isFinite(n) && n > 0) ? n : 0);
+      // ══════════════════════════════════════════════════
+      //  ⚠️ 출처별로 마지막 값만 셉니다   2026-09-27
+      //
+      //  사장님 질문: 「a가 마감체크에서 대파 1을 넣고, b도 대파 1을 넣으면 몇 개?」
+      //
+      //    같은 자리(gl1)를 둘이 누른 것   →  같은 대파입니다. 1이어야 합니다
+      //    다른 자리(gl1·gl3)를 누른 것    →  각각 필요합니다. 2가 맞습니다
+      //
+      //  ⚠️ v5.0 처음에는 출처를 통째로 버려서 둘 다 2가 됐습니다.
+      //     버릴 것은 「마감체크 출처 vs 발주앱 체크」의 구분이었지,
+      //     「마감체크 자리끼리」의 구분이 아니었습니다.
+      //
+      //  뒤에서부터 보므로 출처마다 처음 만난 줄이 곧 마지막 값입니다.
+      // ══════════════════════════════════════════════════
+      const 출처 = String(r[8] || '');
+      if (!더한것[키]) 더한것[키] = {};
+      if (더한것[키][출처] === undefined) {
+        const n = parseFloat(r[5]);
+        더한것[키][출처] = (isFinite(n) && n > 0) ? n : 0;
+      }
       더했나[키] = true;
       if (!정보[키]) {
         정보[키] = { supplier: 업체, item: String(r[4]), at: rowHHMM_(r[0]),
@@ -826,9 +853,9 @@ function getCart(dateStr) {
     }
   }
 
-  // 확정이 안 된 품목은 더한 값이 곧 합계입니다
+  // 확정이 안 된 품목은 출처별 값을 합한 것이 곧 합계입니다
   Object.keys(더했나).forEach(function (키) {
-    if (합계[키] === undefined && 계속[키] !== false) 합계[키] = 더한것[키] || 0;
+    if (합계[키] === undefined && 계속[키] !== false) 합계[키] = 출처합_(더한것[키]);
   });
 
   Object.keys(합계).forEach(function (키) {
