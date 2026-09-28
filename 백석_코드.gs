@@ -1078,6 +1078,17 @@ function cashAlert(data) {
   return jsonResponse({ ok: r.ok });
 }
 
+// ── 🧪 시험용 — Apps Script 편집기에서 이 함수를 고르고 ▶ 를 누르세요 ──
+//
+//    문자가 오면  →  서버는 정상입니다. 앱 쪽(캐시 등)을 보면 됩니다
+//    안 오면      →  서버 문제입니다. 실행 기록의 오류를 보십시오
+//
+//  ⚠️ 마감 체크를 다 하지 않아도 이 함수만으로 시험할 수 있습니다.
+function 시재알림시험() {
+  const r = cashAlert({ short: 12345, branch: 'baekseok', device: '시험' });
+  console.log('결과: ' + r.getContent());
+}
+
 function cartDeadlines_(biz) {
   const out = { '_기본': CART_TIME_DEFAULT.마감 };
   Object.keys(CART_TIME).forEach(function (k) { out[k] = CART_TIME[k].마감; });
