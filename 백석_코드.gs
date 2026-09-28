@@ -332,6 +332,7 @@ function doPost(e) {
     if (data.type === 'cart_absorb') return cartAbsorb(data);     // [v4.0] ⚠️ v5 에서 안 씁니다
     if (data.type === 'cart_send')   return cartSend(data);       // [v4.0] 사람이 보내기
     if (data.type === 'cart_set')    return cartSet(data);        // [v5.0] 이 품목을 정확히 N 으로
+    if (data.type === 'cash_alert')  return cashAlert(data);      // 마감 시재 부족 알림
     if (data.type === 'holiday_add')    return holidayAdd(data);     // [v3.1] 임시휴무
     if (data.type === 'holiday_remove') return holidayRemove(data);
     return jsonResponse({ ok: false, message: '알 수 없는 type' });
@@ -1014,15 +1015,67 @@ function cartSend(data) {
 //     식자재에는 안 맞아서 LMS 로 보냅니다. 「가져갈 것」 알림이 쓰는 길과 같습니다.
 function 사장님요약_(오늘, 보낸것들, 실패) {
   try {
-    let body = '[백석점 발주 완료 ' + 오늘 + ']\n\n' + 보낸것들.join('\n\n');
-    if (실패.length) body += '\n\n⚠️ 실패: ' + 실패.join(' / ');
-    const r = sendFoodSms(CART_ALERT_PHONE, body,
-                          getByteLen(body) > CONFIG.FOOD.SMS_MAX_BYTES ? 'LMS' : 'SMS');
+    // ⚠️ 제목을 따로 줍니다. 안 그러면 본문 앞부분이 잘려 제목이 됩니다 (26-09-29)
+    const 제목 = '백석점 발주 완료 ' + 오늘;
+    let body = 보낸것들.join('\n\n');
+    if (실패.length) body += '\n\n[실패] ' + 실패.join(' / ');
+    const channel = getByteLen(body) > CONFIG.FOOD.SMS_MAX_BYTES ? 'LMS' : 'SMS';
+    const r = sendFoodSms(CART_ALERT_PHONE,
+                          (channel === 'LMS') ? body : ('[' + 제목 + '] ' + body),
+                          channel, 제목);
     if (!r.ok) console.log('사장님 요약 실패: ' + (r.message || ''));
   } catch (err) {
     // ⚠️ 여기서 막혀도 발주는 이미 나갔습니다. 전체를 죽이지 않습니다.
     console.log('사장님 요약 중 오류: ' + err.message);
   }
+}
+
+// ══════════════════════════════════════════════════════════
+//  💰 마감 시재 부족 알림   2026-09-29
+//
+//  ⚠️ 왜 여기 있나 — 솔라피 열쇠가 이 GAS 에만 있습니다.
+//     마감체크리스트 GAS 에는 없습니다. 열쇠를 두 곳에 두면
+//     한쪽만 바꾸게 되고, 그게 이 프로젝트에서 계속 사고를 냈습니다.
+//     마감체크리스트가 🛒 를 보낼 때 쓰는 길을 그대로 씁니다.
+//
+//  사장님 말 (26-09-29): 「시재부족알림 안 옴. 크롤링 알림처럼
+//                        마감체크리스트 앱도 알림해서 보내게끔 못 해주나?」
+//     그전에는 MailApp 으로 메일만 보냈습니다. 메일은 안 보게 됩니다.
+//
+//  ⚠️ 임의 문자를 받지 않습니다. 부족액(숫자)만 받아 문장은 서버가 만듭니다.
+//     이 주소는 열려 있으므로, 남이 아무 문자나 보내게 두면 안 됩니다.
+// ══════════════════════════════════════════════════════════
+function cashAlert(data) {
+  const 부족 = Math.abs(parseInt(data.short, 10) || 0);
+  const 지점 = String(data.branch || '백석') === 'wondang' ? '원당' : '백석';
+  const 폰   = String(data.device || '');
+
+  if (!부족) return jsonResponse({ ok: false, message: '부족액이 없습니다' });
+
+  const now = new Date();
+  const 제목 = '💰 ' + 지점 + ' 시재 부족';
+  const body = formatDate(getBusinessDate(now)) + ' 마감\n\n' +
+               '부족액 ' + 부족.toLocaleString() + '원\n\n' +
+               '채워 넣어주세요.' + (폰 ? '\n(' + 폰 + ' 폰에서 보고했습니다)' : '');
+
+  const channel = getByteLen(body) > CONFIG.FOOD.SMS_MAX_BYTES ? 'LMS' : 'SMS';
+  const r = sendFoodSms(CART_ALERT_PHONE,
+                        (channel === 'LMS') ? body : ('[' + 제목 + '] ' + body),
+                        channel, 제목);
+
+  console.log('시재 부족 알림: ' + 부족 + '원 → ' + (r.ok ? '보냄' : '실패'));
+
+  // ⚠️ 문자가 막혀도 사장님이 알 수 있게 메일도 남깁니다. 돈 이야기입니다.
+  if (!r.ok) {
+    try {
+      MailApp.sendEmail({
+        to: CONFIG.OWNER_EMAIL,
+        subject: '[문자 실패] ' + 제목,
+        body: body + '\n\n문자 발송 실패: ' + (r.message || '알 수 없음'),
+      });
+    } catch (e) {}
+  }
+  return jsonResponse({ ok: r.ok });
 }
 
 function cartDeadlines_(biz) {
@@ -1110,11 +1163,13 @@ function sendCartDue() {
     }
 
     const 줄 = 업체들.map(function (s) { return s + ' ' + 대상[s] + '건'; }).join(' · ');
-    const body = '🔔 발주 넣으세요\n' + 줄 +
-                 '\n\n앱에서 확인하고 「발주하기」를 눌러주세요.' +
-                 (a.이름 === '미락' ? '\n⚠️ 미락은 22:30 이 마감입니다.' : '');
-    const r = sendFoodSms(CART_ALERT_PHONE, body,
-                          getByteLen(body) > CONFIG.FOOD.SMS_MAX_BYTES ? 'LMS' : 'SMS');
+    const 제목 = '발주 넣으세요 (' + a.이름 + ')';
+    const body = 줄 + '\n\n앱에서 확인하고 「발주하기」를 눌러주세요.' +
+                 (a.이름 === '미락' ? '\n미락은 22:30 이 마감입니다.' : '');
+    const channel = getByteLen(body) > CONFIG.FOOD.SMS_MAX_BYTES ? 'LMS' : 'SMS';
+    const r = sendFoodSms(CART_ALERT_PHONE,
+                          (channel === 'LMS') ? body : ('[' + 제목 + '] ' + body),
+                          channel, 제목);
 
     cartLock_(function () {
       getCartSheet_().appendRow([now, 오늘, '백석점', a.이름, body, '',
@@ -1192,9 +1247,20 @@ function sendCartFor_(업체, items, 오늘, biz, device) {
   const 본문조각 = 순서.map(function (이름) {
     return 합[이름] > 0 ? (이름 + ' ' + 합[이름]) : 이름;
   });
-  const 머리 = '[백석점 발주 ' + formatDateShort_(biz) + '] ';
-  const body = 머리 + 본문조각.join(', ');
-  const channel = getByteLen(body) > CONFIG.FOOD.SMS_MAX_BYTES ? 'LMS' : 'SMS';
+
+  // ⚠️ 2026-09-29 — 머리글을 제목으로 뺍니다.
+  //    그전에는 본문 맨 앞에 붙였는데, 솔라피가 제목을 안 받으면
+  //    본문 앞부분을 잘라 제목으로 써서 같은 글이 두 번 보였습니다.
+  //
+  //      [백석점 발주 9/27(일)] 부추 3, 양파, 라        ← 제목
+  //      [Web발신]
+  //      [백석점 발주 9/27(일)] 부추 3, 양파, 라면, …   ← 본문
+  //
+  //    ⚠️ SMS 에는 제목이 없습니다. 그래서 짧을 때는 본문에 넣습니다.
+  const 제목 = '백석점 발주 ' + formatDateShort_(biz);
+  const 품목글 = 본문조각.join(', ');
+  const channel = getByteLen('[' + 제목 + '] ' + 품목글) > CONFIG.FOOD.SMS_MAX_BYTES ? 'LMS' : 'SMS';
+  const body = (channel === 'LMS') ? 품목글 : ('[' + 제목 + '] ' + 품목글);
   // ⚠️ 앱이 보낸 번호를 먼저 씁니다 (handleFoodOrder 와 같은 규칙).
   //    26-09-27 까지 여기만 CONFIG 를 먼저 봐서 사장님 번호로 나갔습니다.
   const 앱번호 = items.length ? String(items[0].phone || '') : '';
@@ -1214,7 +1280,7 @@ function sendCartFor_(업체, items, 오늘, biz, device) {
                  'CONFIG.FOOD.PHONES 와 food.html CFG.PHONES 를 확인하세요');
   }
 
-  const r = sendFoodSms(phone, body, channel);
+  const r = sendFoodSms(phone, body, channel, 제목);
 
   // ⚠️ 보냈다는 표시를 먼저 남깁니다. 실패했어도 남깁니다.
   //    안 남기면 또 보냅니다 — 그게 바로 막으려던 일입니다.
@@ -1633,10 +1699,10 @@ function sendPendingFoodOrder() {
 
 
 // ── 식자재 채널별 발송 라우터 ─────────────────────────────────
-function sendFoodSms(to, body, channel) {
+function sendFoodSms(to, body, channel, subject) {
   // KAKAO 채널은 알림톡 템플릿 없으므로 LMS로 대체
-  if (channel === 'KAKAO') return sendSms(to, body, 'LMS');
-  return sendSms(to, body, channel || 'SMS');
+  if (channel === 'KAKAO') return sendSms(to, body, 'LMS', subject);
+  return sendSms(to, body, channel || 'SMS', subject);
 }
 
 
@@ -1814,7 +1880,20 @@ function sendAlimtalk(to, templateId, variables) {
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 //  ⑨ [v2.0] Solapi SMS / LMS 발송 (식자재 발주용)
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-function sendSms(to, text, type) {
+//  ⚠️ subject(제목) — LMS 에서만 씁니다   2026-09-29
+//
+//  사장님 지적: 문자가 이렇게 왔습니다
+//
+//     [백석점 발주 9/27(일)] 부추 3, 양파, 라        ← 제목 (앞부분이 잘림)
+//     [Web발신]
+//     [백석점 발주 9/27(일)] 부추 3, 양파, 라면, …   ← 본문
+//
+//  제목을 안 주면 **솔라피가 본문 앞부분을 잘라 제목으로 씁니다.**
+//  그래서 같은 글이 두 번 보이고 지저분했습니다.
+//
+//  ⚠️ 제목은 40바이트까지입니다. 넘으면 솔라피가 거절합니다.
+//  ⚠️ SMS 에는 제목이 없습니다. 그래서 SMS 일 때는 본문에 머리글을 넣습니다.
+function sendSms(to, text, type, subject) {
   // type 미지정이면 바이트 수로 자동 판단
   if (!type) type = getByteLen(text) > CONFIG.FOOD.SMS_MAX_BYTES ? 'LMS' : 'SMS';
 
@@ -1830,6 +1909,13 @@ function sendSms(to, text, type) {
       type : type,
     }
   };
+
+  // ⚠️ LMS 일 때만. SMS 에 subject 를 넣으면 솔라피가 거절합니다.
+  if (type === 'LMS' && subject) {
+    let s = String(subject);
+    while (getByteLen(s) > 40) s = s.slice(0, -1);   // 40바이트로 자릅니다
+    payload.message.subject = s;
+  }
 
   try {
     const res = UrlFetchApp.fetch('https://api.solapi.com/messages/v4/send', {
