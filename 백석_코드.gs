@@ -323,6 +323,17 @@ function doGet(e) {
     }
     return ContentService.createTextOutput(json).setMimeType(ContentService.MimeType.JSON);
   }
+  // ⚠️ 2026-10-01 — 매장앱 「오늘은」 카드가 읽어가는 길입니다. 아래 brief_() 참고
+  if (p.action === 'brief') {
+    let json;
+    try { json = JSON.stringify(brief_(p)); }
+    catch (err) { json = JSON.stringify({ ok: false, error: err.message }); }
+    if (p.callback) {
+      return ContentService.createTextOutput(p.callback + '(' + json + ')')
+        .setMimeType(ContentService.MimeType.JAVASCRIPT);
+    }
+    return ContentService.createTextOutput(json).setMimeType(ContentService.MimeType.JSON);
+  }
 
   return HtmlService
     .createHtmlOutputFromFile('index')
@@ -589,6 +600,104 @@ function cartSendAt_(bizDate, supplier) {
   t.setHours(c.hour, c.min, 0, 0);
   return t;
 }
+
+// ════════════════════════════════════════════════════════════
+// 📋 brief — 매장앱 「오늘은」 카드 (2026-10-01)
+//
+//  사장님 질문: 「전날 고기 주문을 넣든 안넣든 데이터가 있을텐데 왜 최상단에 그게 안뜸?」
+//  → 데이터는 「발주기록」 탭에 있었습니다. **읽어가는 길이 없었을 뿐입니다.**
+//
+//  무엇을 주나
+//    meatIn        오늘 들어오는 고기   ← 어제 보낸 고기 발주 (발주기록 탭)
+//    bossOrder     👤 사장님이 사 올 것  ← 어제 나간 바구니 문자
+//    wondangOrder  🧂 원당에서 가져올 것
+//    daepa         어제 시킨 대파 단수   ← 「대파김치 하는 날」 판단에 씁니다
+//    cashShort     ⚠️ 아직 null 입니다 — 시재는 **마감 GAS** 에 있습니다
+//    notices       ⚠️ 아직 null 입니다 — 사장님이 적는 곳을 아직 안 만들었습니다
+//
+//  ⚠️ null 을 주면 앱이 그 칸을 **아예 안 그립니다.** 빈 칸이 생기지 않습니다.
+// ════════════════════════════════════════════════════════════
+
+function brief_(p) {
+  const 지점 = '백석점';
+  const 오늘 = getBusinessDate(new Date());
+
+  // ⚠️ 「오늘 들어오는 고기」는 **어제 보낸 발주**입니다.
+  //    수요일은 이틀 전(월요일) 것입니다 — 화요일은 업체가 쉬어서
+  //    월요일 발주가 화요일 저녁에 나가고 수요일에 들어옵니다.
+  const 뒤로 = (오늘.getDay() === 3) ? 2 : 1;
+  const 전날 = new Date(오늘); 전날.setDate(전날.getDate() - 뒤로);
+  const 전날키 = formatDate(전날);
+
+  const ss = SpreadsheetApp.openById(CONFIG.SPREADSHEET_ID);
+
+  // ── 오늘 들어오는 고기 ────────────────────────────────
+  let meatIn = [];
+  const os = ss.getSheetByName(CONFIG.SHEET_ORDER);
+  if (os && os.getLastRow() > 1) {
+    const v = os.getRange(2, 1, os.getLastRow() - 1, 12).getValues();
+    for (let i = v.length - 1; i >= 0; i--) {         // 최근 것부터
+      if (String(v[i][0]).trim() !== 전날키) continue;
+      if (String(v[i][1]).trim() !== 지점) continue;
+      const 곱 = Number(v[i][7]) || 0, 대 = Number(v[i][8]) || 0, 막 = Number(v[i][9]) || 0;
+      if (곱) meatIn.push('곱창 ' + 곱);
+      if (대) meatIn.push('대창 ' + 대);
+      if (막) meatIn.push('막창 ' + 막);
+      String(v[i][10] || '').split(',').forEach(function (x) {
+        x = x.trim(); if (x) meatIn.push(x);
+      });
+      break;                                          // 그날 한 줄만
+    }
+  }
+
+  // ── 어제 나간 바구니 문자에서 사장님·원당·대파 ──────────
+  //    ⚠️ 「보냄」 행의 품목 칸에는 문자 **전문**이 들어 있습니다.
+  //       둘째 줄이 품목 목록입니다:  [백석점 발주 10/2(목)]\n대파 5, 고추
+  let bossOrder = [], wondangOrder = [], daepa = null;
+  const cs = getCartSheet_();
+  if (cs.getLastRow() > 1) {
+    const n = Math.min(500, cs.getLastRow() - 1);
+    const v = cs.getRange(cs.getLastRow() - n + 1, 1, n, 9).getValues();
+    v.forEach(function (r) {
+      if (String(r[1]).trim() !== 전날키) return;
+      if (String(r[2]).trim() !== 지점) return;
+      if (String(r[6] || '').indexOf('보냄') !== 0) return;
+      const 업체 = String(r[3] || '').trim();
+      const 줄들 = String(r[4] || '').split('\n');
+      const 품목글 = (줄들.length > 1 ? 줄들.slice(1).join(' ') : 줄들[0]).trim();
+      const 품목 = 품목글.split(',').map(function (x) { return x.trim(); }).filter(Boolean);
+      if (업체 === '사장님') bossOrder = bossOrder.concat(품목);
+      if (업체 === '원당')   wondangOrder = wondangOrder.concat(품목);
+      if (업체 === '미락') {
+        품목.forEach(function (x) {
+          const m = x.match(/^대파\s*(\d+(?:\.\d+)?)?$/);
+          if (m) daepa = (daepa || 0) + (m[1] ? parseFloat(m[1]) : 1);
+        });
+      }
+    });
+  }
+
+  return {
+    ok: true,
+    date: formatDate(오늘), basedOn: 전날키,
+    meatIn: meatIn,
+    bossOrder: bossOrder, wondangOrder: wondangOrder,
+    daepa: daepa,
+    cashShort: null,   // ⚠️ 시재는 마감 GAS 에 있습니다. 나중에 잇습니다
+    notices: null,     // ⚠️ 사장님이 적는 곳을 아직 안 만들었습니다
+  };
+}
+
+/** 🔍 brief 가 무엇을 주는지 눈으로 보기 — 읽기만 합니다 (안전) */
+function brief_확인() {
+  const r = brief_({});
+  Logger.log('기준 날짜(어제): ' + r.basedOn);
+  Logger.log('오늘 들어오는 고기: ' + (r.meatIn.length ? r.meatIn.join(', ') : '(없음)'));
+  Logger.log('👤 사장님: ' + (r.bossOrder.length ? r.bossOrder.join(', ') : '(없음)'));
+  Logger.log('🧂 원당: ' + (r.wondangOrder.length ? r.wondangOrder.join(', ') : '(없음)'));
+  Logger.log('대파: ' + (r.daepa == null ? '(없음)' : r.daepa + '단'));
+}
+
 
 function getCartSheet_() {
   const ss = SpreadsheetApp.openById(CONFIG.SPREADSHEET_ID);
@@ -983,7 +1092,55 @@ function cartAbsorb(data) {
 //  ⚠️ 화면이 보내준 목록을 그대로 믿습니다. 사람이 보고 확정한 것이기 때문입니다.
 //     자동 발송 때와 달리 바구니를 다시 읽어 합치지 않습니다 — 그러면 또 두 배가 됩니다.
 // ══════════════════════════════════════════════════════════
+/**
+ * 🔒 같은 발주가 방금 나갔나 (2026-10-01)
+ *
+ *   🔴 왜 필요한가
+ *     v5.0 부터 두 폰이 **같은 바구니**를 봅니다.
+ *     a폰과 b폰이 각자 「발주하기」를 누르면 문자가 두 통 나갑니다.
+ *     화면의 버튼 잠금은 그 폰에만 걸립니다. 서버가 막아야 합니다.
+ *     ⚠️ 26-09-17 원당 주류 6통 사고가 이 모양이었습니다.
+ *        그때 손익에도 6줄이 들어가 100만원이 틀어졌습니다.
+ *
+ *   ⚠️ 완전히 막지는 않습니다. **같은 내용**이 10분 안에 또 올 때만 거릅니다.
+ *      빠진 것을 추가로 보내는 것은 내용이 다르므로 그대로 나갑니다.
+ */
+function 방금보냈나_(오늘, 업체, body) {
+  try {
+    const sheet = getCartSheet_();
+    const last = sheet.getLastRow();
+    if (last < 2) return false;
+    const n = Math.min(300, last - 1);
+    const v = sheet.getRange(last - n + 1, 1, n, 7).getValues();
+    const 지금 = Date.now();
+    const 비교 = String(body).replace(/\s+/g, '');
+    for (let i = v.length - 1; i >= 0; i--) {
+      if (String(v[i][6] || '').indexOf('보냄') !== 0) continue;
+      if (String(v[i][1]).trim() !== 오늘) continue;
+      if (String(v[i][3]).trim() !== 업체) continue;
+      if (String(v[i][4] || '').replace(/\s+/g, '') !== 비교) continue;
+      const t = v[i][0];
+      if (!(t instanceof Date)) continue;
+      const 지난ms = 지금 - t.getTime();
+      if (지난ms >= 0 && 지난ms < 10 * 60 * 1000) return true;
+    }
+  } catch (e) { console.log('방금보냈나_ 확인 실패(계속 진행): ' + e.message); }
+  return false;
+}
+
 function cartSend(data) {
+  // 🔒 두 폰이 동시에 눌러도 한 번에 하나씩만 들어옵니다.
+  //    먼저 들어온 쪽이 「보냄」을 남기면, 뒤에 들어온 쪽은 방금보냈나_ 에 걸립니다.
+  const lock = LockService.getScriptLock();
+  try { lock.waitLock(25000); } catch (e) { console.log('잠금 실패(계속 진행): ' + e.message); }
+  try {
+    return cartSend_(data);
+  } finally {
+    try { lock.releaseLock(); } catch (e) {}
+  }
+}
+
+function cartSend_(data) {
   const items = data.items || [];
   if (!items.length) return jsonResponse({ ok: false, message: '보낼 것이 없습니다' });
 
@@ -1005,18 +1162,22 @@ function cartSend(data) {
   const 실패 = [];
   const 요약 = [];
 
+  const 건너뜀 = [];
   순서.forEach(function (업체) {
     const r = sendCartFor_(업체, 업체별[업체], 오늘, biz, String(data.device || ''));
-    결과.push({ supplier: 업체, ok: r.ok });
+    결과.push({ supplier: 업체, ok: r.ok, skipped: !!r.skipped });
     if (!r.ok) 실패.push(업체 + ': ' + (r.message || '알 수 없음'));
+    else if (r.skipped) 건너뜀.push(업체);     // 🔒 같은 발주가 방금 나간 것
     else 요약.push(r.body);
   });
 
   // ── 사장님께 카톡 요약 (사장님 요청 2026-09-27) ──
   //    ⚠️ 문자가 진짜 나간 것만 넣습니다. 실패한 것을 「보냈다」고 하면 안 됩니다.
+  //    ⚠️ 건너뛴 것도 넣지 않습니다. 그건 이미 앞서 보고된 것입니다.
   if (요약.length) 사장님요약_(오늘, 요약, 실패);
+  if (건너뜀.length) console.log('♻️ 같은 발주라 건너뜀: ' + 건너뜀.join(', '));
 
-  return jsonResponse({ ok: !실패.length, results: 결과, failed: 실패 });
+  return jsonResponse({ ok: !실패.length, results: 결과, failed: 실패, skipped: 건너뜀 });
 }
 
 // ── 사장님께 「오늘 무엇이 나갔나」 ───────────────────────
@@ -1279,6 +1440,13 @@ function sendCartFor_(업체, items, 오늘, biz, device) {
   if (!phone) {
     alertFailure('바구니 발송 실패 — 전화번호 없음', 업체 + ' / ' + body, '전화번호가 비어 있습니다');
     return { ok: false, body: body, message: '전화번호가 비어 있습니다' };
+  }
+
+  // 🔒 같은 내용이 10분 안에 이미 나갔으면 **보내지 않습니다** (26-10-01)
+  //    ⚠️ 실패가 아닙니다. 이미 나갔다는 뜻이므로 ok 로 돌려보냅니다.
+  if (방금보냈나_(오늘, 업체, body)) {
+    console.log('♻️ ' + 업체 + ' — 같은 발주가 방금 나갔습니다. 보내지 않습니다');
+    return { ok: true, body: body, skipped: true, message: '같은 발주가 방금 나갔습니다' };
   }
 
   // ⚠️ 사장님 번호로 나가려 하면 한 번 더 확인합니다.
