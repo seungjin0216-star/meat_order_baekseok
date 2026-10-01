@@ -1824,6 +1824,17 @@ function handleStock(data) {
   const extras = data.extras || [];
 
   const dateStr = formatDate(new Date());
+
+  // [v5.2] 입고 정정 (2026-10-01 · 사장님 결정 「가 방식」)
+  //   같은 날 앞서 보낸 입고가 있으면 이번 것이 **정정**입니다. 앞 줄 H열에 「대체됨」.
+  //   ⚠️ 손익 GAS(syncMeatCosts)가 「대체됨」 줄을 빼고 고기값을 셉니다 — 둘이 짝입니다
+  //      예전에는 같은 날 줄을 전부 더해서 고쳐 보내면 고기값이 두 배가 됐습니다
+  //   ⚠️ 「추가 입고」와 구분하지 않습니다. 사장님: 하루에 입고가 두 번 들어오는 날은 「없음」 (26-10-01)
+  //      그런 날이 생기면 앞 것이 빠집니다 → 앱이 「고친 건가요, 추가인가요」를 물어야 합니다
+  const 앞입고수 = 앞줄대체_(CONFIG.SHEET_STOCK, dateStr, 8);
+  const 입고정정 = 앞입고수 > 0;
+  if (입고정정) console.log('정정 입고 | 앞 입고 ' + 앞입고수 + '줄 대체됨');
+
   logStockToSheet(dateStr, gc, dc, mc, bs, extras);
 
   const stockParts = [];
@@ -1834,7 +1845,10 @@ function handleStock(data) {
   if (extras.length > 0) stockParts.push(extras.join(' · '));
   const stockSummary = stockParts.length > 0 ? stockParts.join(' / ') : '입고 없음';
 
-  const stockVars = { '날짜': dateStr, '입고요약': stockSummary };
+  const stockVars = {
+    '날짜'    : dateStr + (입고정정 ? ' ⚠️정정' : ''),
+    '입고요약' : (입고정정 ? '⚠️ 정정 — 앞서 보낸 입고 대신 이것입니다\n' : '') + stockSummary,
+  };
   const s1 = sendAlimtalk(CONFIG.OWNER_NUMBER,  CONFIG.KAKAO.TEMPLATES.STOCK_REPORT, stockVars);
   const s2 = sendAlimtalk(CONFIG.VENDOR_NUMBER, CONFIG.KAKAO.TEMPLATES.STOCK_REPORT, stockVars);
 
@@ -1843,7 +1857,7 @@ function handleStock(data) {
     return jsonResponse({ ok: false, error: (s1.error || s2.error) });
   }
 
-  return jsonResponse({ ok: true });
+  return jsonResponse({ ok: true, correction: 입고정정 });
 }
 
 
