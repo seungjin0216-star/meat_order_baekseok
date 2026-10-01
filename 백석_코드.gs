@@ -323,6 +323,17 @@ function doGet(e) {
     }
     return ContentService.createTextOutput(json).setMimeType(ContentService.MimeType.JSON);
   }
+  // ⚠️ 2026-10-01 — 매장앱이 「오늘 고기 발주·입고가 나갔나」를 두 폰에서 같이 봅니다. 오늘고기_() 참고
+  if (p.action === 'meatToday') {
+    let json;
+    try { json = JSON.stringify(오늘고기_()); }
+    catch (err) { json = JSON.stringify({ ok: false, error: err.message }); }
+    if (p.callback) {
+      return ContentService.createTextOutput(p.callback + '(' + json + ')')
+        .setMimeType(ContentService.MimeType.JAVASCRIPT);
+    }
+    return ContentService.createTextOutput(json).setMimeType(ContentService.MimeType.JSON);
+  }
   // ⚠️ 2026-10-01 — 매장앱 「오늘은」 카드가 읽어가는 길입니다. 아래 brief_() 참고
   if (p.action === 'brief') {
     let json;
@@ -1550,6 +1561,18 @@ function handleOrder(data) {
 
   console.log('발주계산 | 요일:' + dayOfWeek + ' 현재고:' + currentStock + ' 목표:' + target + ' 계산:' + calcOrder + ' 최종:' + gcOrder + ' 지연발송:' + isMondayDelay);
 
+  // [v5.1] 정정 발주 (2026-10-01 · 사장님 결정 「정정 문자로」)
+  //   같은 영업일에 앞서 보낸 고기 발주가 있으면 이번 것이 **정정**입니다.
+  //   ⚠️ 앞 줄은 지우지 않고 M열에 「대체됨」만 적습니다 (기록을 지우지 않는 규칙)
+  //   ⚠️ 앞 발주가 아직 예약 상태(업체가 못 받음)면 정정 문자를 보낼 필요가 없습니다.
+  //      예약만 이번 것으로 바뀝니다.
+  const 예약중 = 예약발주날짜_() === dateStr;
+  const 앞발주수 = 앞줄대체_(CONFIG.SHEET_ORDER, dateStr, 13);
+  const 정정 = 앞발주수 > 0 && !예약중;           // 업체가 이미 앞 문자를 받았다
+  const 정정머리 = 정정 ? '⚠️ 정정 — 앞서 보낸 발주 대신 이것으로 부탁드립니다\n' : '';
+  const 정정날짜 = 정정 ? ' ⚠️정정' : '';
+  if (앞발주수 > 0) console.log('정정 발주 | 앞 발주 ' + 앞발주수 + '줄 대체됨 · 예약중:' + 예약중);
+
   logOrderToSheet(dateStr, gcUse, gcDone, gcIng, currentStock, target, gcOrder, dc, mc, extras, isMondayDelay);
 
   const orderParts = ['곱창 ' + gcOrder + '개'];
@@ -1585,9 +1608,11 @@ function handleOrder(data) {
     //        이 경우 모아둘 이유가 없으므로 바로 보낸다.
     if (sendDay.getTime() <= now.getTime()) {
       console.log('예약 시각이 이미 지남 → 즉시 발송으로 전환 (' + sendDayLabel + ' 20:00)');
+      // [v5.1] 남아 있는 예약이 있으면 거둡니다. 안 거두면 트리거가 앞 것을 또 보냅니다
+      if (예약중) 예약발주거두기_();
       const rn = sendAlimtalk(CONFIG.VENDOR_NUMBER, CONFIG.KAKAO.TEMPLATES.VENDOR_ORDER, {
-        '날짜'     : dateStr,
-        '발주요약' : orderSummary,
+        '날짜'     : dateStr + 정정날짜,
+        '발주요약' : 정정머리 + orderSummary,
       });
       if (!rn.ok) {
         alertFailure('고기 발주 업체 발송 실패 (예약시각 경과분)', orderSummary, rn.error);
@@ -1599,9 +1624,9 @@ function handleOrder(data) {
         '연육완료' : String(gcDone),
         '연육중'   : String(gcIng),
         '목표'     : String(target) + (bigoNote ? bigoNote : ''),
-        '발주요약' : orderSummary + '\n▶ 예약시각이 지나 바로 발송했습니다',
+        '발주요약' : 정정머리 + orderSummary + '\n▶ 예약시각이 지나 바로 발송했습니다',
       });
-      return jsonResponse({ ok: true, gc_order: gcOrder, target: target });
+      return jsonResponse({ ok: true, gc_order: gcOrder, target: target, correction: 정정 });
     }
 
     const props = PropertiesService.getScriptProperties();
@@ -1624,7 +1649,8 @@ function handleOrder(data) {
       '연육완료' : String(gcDone),
       '연육중'   : String(gcIng),
       '목표'     : String(target) + (bigoNote ? bigoNote : ''),
-      '발주요약' : orderSummary + '\n▶ ' + sendDayLabel + ' 20:00 업체 자동발송',
+      '발주요약' : orderSummary + '\n▶ ' + sendDayLabel + ' 20:00 업체 자동발송' +
+                   (앞발주수 > 0 ? '\n▶ 앞서 넣은 예약을 이것으로 바꿨습니다' : ''),
     });
 
     // 예약 자체는 저장됐으므로 실패해도 발주는 살아있다.
@@ -1637,18 +1663,21 @@ function handleOrder(data) {
     return jsonResponse({ ok: true, gc_order: gcOrder, target: target, scheduled: true });
   }
 
+  // [v5.1] 바로 보내는 날인데 예약이 남아 있으면 거둡니다 (앞 것이 또 나가지 않게)
+  if (예약중) 예약발주거두기_();
+
   const r1 = sendAlimtalk(CONFIG.OWNER_NUMBER, CONFIG.KAKAO.TEMPLATES.ORDER_REPORT, {
-    '날짜'     : dateStr,
+    '날짜'     : dateStr + 정정날짜,
     '쓰는것'   : String(gcUse),
     '연육완료' : String(gcDone),
     '연육중'   : String(gcIng),
     '목표'     : String(target) + (bigoNote ? bigoNote : ''),
-    '발주요약' : orderSummary,
+    '발주요약' : 정정머리 + orderSummary,
   });
 
   const r2 = sendAlimtalk(CONFIG.VENDOR_NUMBER, CONFIG.KAKAO.TEMPLATES.VENDOR_ORDER, {
-    '날짜'     : dateStr,
-    '발주요약' : orderSummary,
+    '날짜'     : dateStr + 정정날짜,
+    '발주요약' : 정정머리 + orderSummary,
   });
 
   // 업체 발송(r2)이 진짜다. 사장님 보고(r1)는 못 받아도 발주는 나가야 한다.
@@ -1660,7 +1689,97 @@ function handleOrder(data) {
     console.log('사장님 보고 알림톡만 실패 (업체 발송은 성공): ' + r1.error);
   }
 
-  return jsonResponse({ ok: true, gc_order: gcOrder, target: target });
+  return jsonResponse({ ok: true, gc_order: gcOrder, target: target, correction: 정정 });
+}
+
+// ════════════════════════════════════════════════════════════
+// ✏️ 정정 발주 도우미 (2026-10-01)
+// ════════════════════════════════════════════════════════════
+
+/** 지금 걸려 있는 고기 예약 발주의 영업일 ("26.10.06(월)") — 없으면 '' */
+function 예약발주날짜_() {
+  const s = PropertiesService.getScriptProperties().getProperty('PENDING_MONDAY_ORDER');
+  if (!s) return '';
+  try { return JSON.parse(s).dateStr || ''; } catch (e) { return ''; }
+}
+
+/** 고기 예약 발주를 거둡니다 (속성 + 트리거) */
+function 예약발주거두기_() {
+  PropertiesService.getScriptProperties().deleteProperty('PENDING_MONDAY_ORDER');
+  ScriptApp.getProjectTriggers().forEach(function (t) {
+    if (t.getHandlerFunction() === 'sendPendingMondayOrder') ScriptApp.deleteTrigger(t);
+  });
+  console.log('앞 예약 발주를 거뒀습니다 (정정)');
+}
+
+/**
+ * 같은 영업일 · 백석점의 앞 줄들에 「대체됨」을 적습니다. 적은 줄 수를 돌려줍니다.
+ *   ⚠️ 지우지 않습니다. 상태 칸(상태열)에 글자만 적습니다.
+ *   상태열: 발주기록 13(M) · 입고기록 8(H)
+ */
+function 앞줄대체_(시트이름, dateStr, 상태열) {
+  const sheet = SpreadsheetApp.openById(CONFIG.SPREADSHEET_ID).getSheetByName(시트이름);
+  if (!sheet || sheet.getLastRow() < 2) return 0;
+  상태열머리_(sheet, 상태열);
+  const n = Math.min(300, sheet.getLastRow() - 1);
+  const 시작 = sheet.getLastRow() - n + 1;
+  const v = sheet.getRange(시작, 1, n, 상태열).getValues();
+  let 수 = 0;
+  for (let i = 0; i < v.length; i++) {
+    if (String(v[i][0]).trim() !== dateStr) continue;
+    if (String(v[i][1]).trim() !== '백석점') continue;
+    if (String(v[i][상태열 - 1]).trim() === '대체됨') continue;
+    sheet.getRange(시작 + i, 상태열).setValue('대체됨');
+    수++;
+  }
+  return 수;
+}
+
+/** 상태 · 보낸 시각 머리글이 비어 있으면 채웁니다 (옛 시트는 이 칸이 없습니다) */
+function 상태열머리_(sheet, 상태열) {
+  const h = sheet.getRange(1, 상태열, 1, 2).getValues()[0];
+  if (!h[0]) sheet.getRange(1, 상태열).setValue('상태');
+  if (!h[1]) sheet.getRange(1, 상태열 + 1).setValue('보낸 시각');
+}
+
+/**
+ * 「15시02분」 — 보낸 시각
+ *   ⚠️ "15:02" 로 적으면 시트가 시각으로 바꿔 1899년 날짜가 됩니다 (2026-09 의 46266 사고와 같은 병)
+ *      그래서 시트가 못 알아보는 꼴로 적습니다.
+ */
+function 보낸시각_() {
+  return Utilities.formatDate(new Date(), 'Asia/Seoul', 'HH시mm분');
+}
+
+/**
+ * 📋 오늘 고기 발주·입고가 나갔나 — 매장앱이 두 폰에서 같이 봅니다 (2026-10-01)
+ *   사장님: 「고기발주입고 공유가 안되서 아직안한것으로 나옴」
+ *   → 「보냈다」를 폰에만 적고 있었습니다. 시트(발주기록·입고기록)가 진실입니다.
+ *   답: { ok, order: '15시02분' | '보냄' | null, stock: … }
+ */
+function 오늘고기_() {
+  const 오늘 = formatDate(getBusinessDate(new Date()));
+  const ss = SpreadsheetApp.openById(CONFIG.SPREADSHEET_ID);
+  const 찾기 = function (시트이름, 상태열) {
+    const sh = ss.getSheetByName(시트이름);
+    if (!sh || sh.getLastRow() < 2) return null;
+    const n = Math.min(100, sh.getLastRow() - 1);
+    const 폭 = Math.min(상태열 + 1, sh.getLastColumn());
+    const v = sh.getRange(sh.getLastRow() - n + 1, 1, n, 폭).getValues();
+    for (let i = v.length - 1; i >= 0; i--) {               // 최근 것부터
+      if (String(v[i][0]).trim() !== 오늘) continue;
+      if (String(v[i][1]).trim() !== '백석점') continue;
+      if (String(v[i][상태열 - 1] || '').trim() === '대체됨') continue;
+      return String(v[i][상태열] || '').trim() || '보냄';
+    }
+    return null;
+  };
+  return { ok: true, date: 오늘, order: 찾기(CONFIG.SHEET_ORDER, 13), stock: 찾기(CONFIG.SHEET_STOCK, 8) };
+}
+
+/** 🔍 오늘고기_ 가 무엇을 주는지 — 읽기만 합니다 (안전) */
+function 오늘고기_확인() {
+  Logger.log(JSON.stringify(오늘고기_()));
 }
 
 
@@ -2131,7 +2250,8 @@ function logOrderToSheet(dateStr, gcUse, gcDone, gcIng, total, target, gcOrder, 
   const baseTarget  = CONFIG.BAESEOK.TARGET_BY_DAY[new Date().getDay()];
   const holidayNote = target > baseTarget ? '연휴보정' : '-';
   const delayNote   = isMondayDelay ? ' (휴무 지연발송)' : '';
-  sheet.appendRow([dateStr,'백석점',gcUse,gcDone,gcIng,total,target,gcOrder,dc,mc,extras.join(', '),holidayNote+delayNote]);
+  // [v5.1] M 상태(정정되면 「대체됨」) · N 보낸 시각 — 매장앱이 두 폰에서 같이 봅니다
+  sheet.appendRow([dateStr,'백석점',gcUse,gcDone,gcIng,total,target,gcOrder,dc,mc,extras.join(', '),holidayNote+delayNote,'',보낸시각_()]);
 }
 
 function logStockToSheet(dateStr, gc, dc, mc, bs, extras) {
@@ -2140,7 +2260,8 @@ function logStockToSheet(dateStr, gc, dc, mc, bs, extras) {
   if (sheet.getLastRow() === 0) {
     sheet.appendRow(['날짜','지점','곱창 입고','대창 입고','막창 입고','박스 입고','기타']);
   }
-  sheet.appendRow([dateStr,'백석점',gc,dc,mc,bs,extras.join(', ')]);
+  // [v5.1] H 상태 · I 보낸 시각 — ⚠️ 손익 GAS 는 A~G 만 읽습니다. 뒤에 붙여서 영향 없음
+  sheet.appendRow([dateStr,'백석점',gc,dc,mc,bs,extras.join(', '),'',보낸시각_()]);
 }
 
 // [v2.0] 식자재 발주 기록
