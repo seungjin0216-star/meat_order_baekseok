@@ -1,2 +1,9 @@
 .DS_Store
 .DS_Store
+
+# GAS 연결 (clasp) — 2026-10-01
+# .clasp.json 은 프로젝트 번호를 담고 있어 올리지 않습니다 (저장소 Public)
+.clasp.json
+# _gas/ 는 편집기에서 내려받은 사본입니다. 정본은 백석_코드.gs 하나 (두 곳에 적지 않기)
+# ⚠️ 맨 위 폴더로 pull 하면 GAS 의 index.html 이 발주앱 화면 index.html 을 덮어씁니다
+_gas/
