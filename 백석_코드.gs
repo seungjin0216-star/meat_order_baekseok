@@ -457,6 +457,12 @@ const CART_ALERTS = [
 // 한 번 알리고 안 보냈으면 이만큼 뒤에 한 번 더
 const CART_ALERT_REPEAT_MIN = 45;
 
+// 🔴 2026-10-02 — 「발주 넣으세요」 문자를 끕니다
+//    사장님: 「발주넣으세요 알림은 문자로 안해도됨. 통합앱이 생겼으니 통합앱에서 알림나오는게 훨씬좋음」
+//    → 매장앱 폰 알림이 대신합니다 (사장앱 서버 owner-staff · 21:30 미락 · 22:00 · 23:30)
+//    ⚠️ 다시 문자로 받으려면 true. 코드는 지우지 않았습니다
+const CART_ALERT_SMS = false;
+
 // ── 가져갈 것 알림 (2026-09-25) ────────────────────────
 //
 //  사장님 말:
@@ -1317,8 +1323,8 @@ function sendCartDue() {
   const cart = getCart(오늘);
   const 시각 = getBusinessHour(now) * 60 + now.getMinutes();   // 영업일 기준 분
 
-  // ── ① 발주 넣으라는 알림 ──
-  CART_ALERTS.forEach(function (a) {
+  // ── ① 발주 넣으라는 알림 ── (⚠️ 26-10-02 부터 꺼짐 · CART_ALERT_SMS)
+  if (CART_ALERT_SMS) CART_ALERTS.forEach(function (a) {
     const 알릴때 = a.hour * 60 + a.min;
     if (시각 < 알릴때) return;
 
@@ -1337,12 +1343,10 @@ function sendCartDue() {
     const 업체들 = Object.keys(대상);
     if (!업체들.length) return;                                  // 담긴 게 없으면 조용히
 
-    // 이미 알렸나 — 처음이면 보내고, 45분이 지났으면 한 번 더
+    // 이미 알렸나 — 🔴 한 번만 (2026-10-02 · 사장님 「발주 넣으세요 문자가 날라오는데 한번만 오게끔해줘」)
+    //    전에는 45분 뒤 한 번 더 보냈습니다 (CART_ALERT_REPEAT_MIN). 이제 매장앱 22시 푸시가 그 몫을 합니다
     const 전에 = cart.alerted && cart.alerted[a.이름];
-    if (전에 !== undefined && 전에 !== null) {
-      if (시각 - 전에 < CART_ALERT_REPEAT_MIN) return;
-      if (cart.alertedTwice && cart.alertedTwice[a.이름]) return;  // 두 번이면 그만
-    }
+    if (전에 !== undefined && 전에 !== null) return;
 
     const 줄 = 업체들.map(function (s) { return s + ' ' + 대상[s] + '건'; }).join(' · ');
     const 제목 = '발주 넣으세요 (' + a.이름 + ')';
@@ -1524,7 +1528,23 @@ function 바구니누락확인() {
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 //  ③ 고기 발주 처리
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+/**
+ * 🔴 같은 내용이 3분 안에 또 오면 건너뜁니다 (2026-10-02)
+ *    매장앱이 느려 직원이 여러 번 눌렀고 10/1 고기 입고가 4번 들어갔습니다 → 손익 고기값 4배
+ *    v5.2 정정 기능 뒤로는 여러 번 누르면 업체에 「⚠️정정」 문자가 여러 통 갈 수 있습니다
+ *    → 화면에서도 막았지만(매장앱 v7) 서버도 한 번 더 막습니다
+ */
+function 방금같은것_(종류, data) {
+  const 내용 = JSON.stringify(data, function (k, v) { return k === 'date' ? undefined : v; });
+  const key = 'dup_' + 종류 + '_' + Utilities.base64EncodeWebSafe(Utilities.computeDigest(Utilities.DigestAlgorithm.MD5, 내용, Utilities.Charset.UTF_8));
+  const cache = CacheService.getScriptCache();
+  if (cache.get(key)) return true;
+  cache.put(key, '1', 180);
+  return false;
+}
+
 function handleOrder(data) {
+  if (방금같은것_('order', data)) { console.log('같은 고기 발주가 3분 안에 또 옴 → 건너뜀'); return jsonResponse({ ok: true, dup: true }); }
   const gcUse  = parseFloat(data.gc_use)  || 0;
   const gcDone = parseFloat(data.gc_done) || 0;
   const gcIng  = parseFloat(data.gc_ing)  || 0;
@@ -1817,6 +1837,7 @@ function sendPendingMondayOrder() {
 //  ④ 입고 처리 (기존 그대로)
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 function handleStock(data) {
+  if (방금같은것_('stock', data)) { console.log('같은 입고가 3분 안에 또 옴 → 건너뜀'); return jsonResponse({ ok: true, dup: true }); }
   const gc     = parseInt(data.gc)  || 0;
   const dc     = parseInt(data.dc)  || 0;
   const mc     = parseInt(data.mc)  || 0;
@@ -2425,4 +2446,32 @@ function jsonResponse(obj) {
   return ContentService
     .createTextOutput(JSON.stringify(obj))
     .setMimeType(ContentService.MimeType.JSON);
+}
+
+
+// ════════════════════════════════════════════════════════════
+// 🧹 10/1 고기 입고 중복 정리 (2026-10-02)
+//   10/1 백석 입고가 같은 내용으로 4줄 → 손익 고기값 1,800,000 (실제 450,000)
+//   ⚠️ 지우지 않습니다. 첫 줄만 두고 나머지 H열에 「대체됨」 → 손익 새벽 2시 계산이 그 줄을 뺍니다
+//   ⚠️ 범위를 못 박았습니다: 날짜 26.10.01 · 백석점 · 내용이 첫 줄과 완전히 같은 줄만
+// ════════════════════════════════════════════════════════════
+function 입고중복_1001_미리보기() { 입고중복_1001_(true); }
+function 입고중복_1001_적용()     { 입고중복_1001_(false); }
+function 입고중복_1001_(dryRun) {
+  const 날짜 = '26.10.01(목)';
+  const sh = SpreadsheetApp.openById(CONFIG.SPREADSHEET_ID).getSheetByName(CONFIG.SHEET_STOCK);
+  const v = sh.getRange(1, 1, sh.getLastRow(), 9).getValues();
+  let 첫 = null, n = 0;
+  for (let i = 1; i < v.length; i++) {
+    if (String(v[i][0]).trim() !== 날짜 || String(v[i][1]).trim() !== '백석점') continue;
+    if (String(v[i][7]).trim() === '대체됨') continue;
+    const 내용 = v[i].slice(2, 7).join('|');
+    Logger.log((i + 1) + '행  ' + 내용);
+    if (첫 === null) { 첫 = 내용; Logger.log('   → 남김'); continue; }
+    if (내용 !== 첫) { Logger.log('   → 내용이 달라서 그대로 둠'); continue; }
+    n++;
+    if (!dryRun) sh.getRange(i + 1, 8).setValue('대체됨');
+    Logger.log('   → ' + (dryRun ? '대체됨으로 바꿀 것' : '대체됨으로 바꿈'));
+  }
+  Logger.log((dryRun ? '[미리보기] ' : '[적용] ') + n + '줄');
 }
