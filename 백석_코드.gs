@@ -362,6 +362,7 @@ function doPost(e) {
     if (data.type === 'order')      return handleOrder(data);
     if (data.type === 'stock')      return handleStock(data);
     if (data.type === 'food_order') return handleFoodOrder(data); // [v2.0]
+    if (data.type === 'liquor_set') return 주류설정_(data);        // [26-10-04] 주류 잔여·체크 두 폰 공유
     if (data.type === 'cart_add')    return cartAdd(data);        // [v3.0] 담기
     if (data.type === 'cart_remove') return cartRemove(data);     // [v3.0] 빼기
     if (data.type === 'cart_absorb') return cartAbsorb(data);     // [v4.0] ⚠️ v5 에서 안 씁니다
@@ -875,7 +876,7 @@ function getCart(dateStr) {
 
   const sheet = getCartSheet_();
   const last  = sheet.getLastRow();
-  if (last < 2) return { ok: true, date: date, items: [], sent: {}, notified: {} };
+  if (last < 2) { const 주류0 = 주류상태_(date); return { ok: true, date: date, items: [], sent: 주류0.sent ? { '주류': 주류0.sent } : {}, notified: {}, liquor: 주류0 }; }
 
   // 하루치만 보면 되므로 끝에서 600줄만 읽습니다
   const from = Math.max(2, last - 600 + 1);
@@ -1007,7 +1008,9 @@ function getCart(dateStr) {
   });
 
   담긴것.reverse();   // 담은 순서대로
-  return { ok: true, date: date, items: 담긴것, sent: 보냄,
+  const 주류 = 주류상태_(date);
+  if (주류.sent && !보냄['주류']) 보냄['주류'] = 주류.sent;
+  return { ok: true, date: date, items: 담긴것, sent: 보냄, liquor: 주류,
            notified: 알림, alerted: 발주알림, alertedTwice: 발주알림두번,
            deadlines: cartDeadlines_(biz) };
 }
@@ -1911,6 +1914,8 @@ function handleFoodOrder(data) {
 
   // 스프레드시트 기록 (즉시 / 예약 모두)
   logFoodOrderToSheet(dateStr, msgs, delayed);
+  // 🍶 주류가 나갔으면 두 폰이 같이 보게 표시 · 입력값은 비움 (26-10-04)
+  if (msgs.some(function (m) { return m.supplier === '주류'; })) 주류저장_(dateStr, { sent: Utilities.formatDate(now, 'Asia/Seoul', 'HH:mm') + (delayed ? ' 예약' : ''), stock: {}, checks: {}, reset: true });
 
   if (delayed && scheduleFoodTrigger(now)) {
     // 월·화 발주 → 화요일 20:30 예약
@@ -2474,4 +2479,40 @@ function 입고중복_1001_(dryRun) {
     Logger.log('   → ' + (dryRun ? '대체됨으로 바꿀 것' : '대체됨으로 바꿈'));
   }
   Logger.log((dryRun ? '[미리보기] ' : '[적용] ') + n + '줄');
+}
+
+
+// ═══════════════════════════════════════════════════════════════
+//  🍶 주류 — 두 폰 공유 (26-10-04)
+//  사장님: 「식자재발주 > 주류 부분만 공유가 안 됨. a폰 미락 · b폰 주류 잔여박스와 음료수 → b폰에서 발주
+//          → 3개 다 들어갔는데 a폰에는 미락·음료수만 보이고 주류는 안 보임. 체크도 안 되어 있어」
+//  원인  주류는 바구니(발주바구니 시트)를 안 씁니다 — 「남은 박스」를 적으면 앱이 시킬 개수를 계산하는 방식이라
+//        CART_SKIP 에 들어 있고, 발주도 food_order 로 따로 나갑니다. 그래서 입력·체크·「보냄」이 그 폰에만 있었습니다
+//  해결  남은 박스 · 체크 · 보낸 시각을 스크립트 속성에 영업일별로 둡니다 (getCart 가 liquor 로 같이 돌려줌)
+//  ⚠️ 바구니 시트에 넣지 않습니다 — sendCartDue 가 주류를 문자로 보내 버릴 수 있음 (CART_SKIP 이유)
+// ═══════════════════════════════════════════════════════════════
+function 주류키_(date) { return 'LIQUOR_' + date; }
+function 주류상태_(date) {
+  try { const v = PropertiesService.getScriptProperties().getProperty(주류키_(date)); return v ? JSON.parse(v) : { stock: {}, checks: {} }; }
+  catch (e) { return { stock: {}, checks: {} }; }
+}
+function 주류저장_(date, patch) {
+  const lock = LockService.getScriptLock(); try { lock.waitLock(10000); } catch (e) {}
+  try {
+    const cur = patch.reset ? { stock: {}, checks: {} } : 주류상태_(date);
+    Object.keys(patch.stock || {}).forEach(function (k) { const v = patch.stock[k]; if (v === null || v === '') delete cur.stock[k]; else cur.stock[k] = v; });
+    Object.keys(patch.checks || {}).forEach(function (k) { if (patch.checks[k]) cur.checks[k] = true; else delete cur.checks[k]; });
+    if (patch.sent) cur.sent = patch.sent;
+    cur.at = Utilities.formatDate(new Date(), 'Asia/Seoul', 'HH:mm:ss'); if (patch.device) cur.device = patch.device;
+    PropertiesService.getScriptProperties().setProperty(주류키_(date), JSON.stringify(cur));
+    // 지난 영업일 것은 정리 (속성 칸이 쌓이지 않게) — 7일 지난 것만
+    const props = PropertiesService.getScriptProperties().getKeys().filter(function (k) { return k.indexOf('LIQUOR_') === 0 && k < 주류키_(formatDate(new Date(Date.now() - 7 * 864e5))); });
+    props.forEach(function (k) { PropertiesService.getScriptProperties().deleteProperty(k); });
+    return cur;
+  } finally { try { lock.releaseLock(); } catch (e) {} }
+}
+function 주류설정_(data) {
+  const date = formatDate(getBusinessDate(new Date()));
+  const cur = 주류저장_(date, { stock: data.stock || {}, checks: data.checks || {}, device: data.device || '' });
+  return jsonResponse({ ok: true, liquor: cur });
 }

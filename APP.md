@@ -6,6 +6,13 @@
 
 ---
 
+### v5.4 주류 두 폰 공유 (26-10-04 · @26)
+```
+liquor_set (POST) · getCart 응답의 liquor · handleFoodOrder 가 주류 보낸 시각 기록
+저장  스크립트 속성 LIQUOR_<영업일> (7일 지나면 정리)
+⚠️ 바구니 시트에 주류를 안 넣음 — sendCartDue 가 문자로 보낼 수 있음 (CART_SKIP 그대로)
+```
+
 ## 0. ⚠️ 건드리기 전 — 반드시 확인
 
 ```
