@@ -80,8 +80,11 @@ const CONFIG = {
   OWNER_EMAIL       : 'seungjin0216@gmail.com',
 
   SENDER_NUMBER     : '01041216995',
-  VENDOR_NUMBER     : '01041216995',
-  OWNER_NUMBER      : '01053226995',
+  // 🔁 26-10-06 사장님: 「고기 입고 발주 문자 받는 번호 바꿔야해 … 서로 바꿔줘」
+  //    전: VENDOR 01041216995 · OWNER 01053226995   → 지금 반대
+  //    ⚠️ 이 둘은 고기 발주·입고 알림톡에만 씁니다. 식자재·바구니 번호(CART_ALERT_PHONE 등)는 그대로
+  VENDOR_NUMBER     : '01053226995',
+  OWNER_NUMBER      : '01041216995',
   BAESEOK_ADMIN     : '01041216995',
 
   KAKAO: {
@@ -672,18 +675,30 @@ function brief_(p) {
   //    ⚠️ 「보냄」 행의 품목 칸에는 문자 **전문**이 들어 있습니다.
   //       둘째 줄이 품목 목록입니다:  [백석점 발주 10/2(목)]\n대파 5, 고추
   let bossOrder = [], wondangOrder = [], daepa = null;
+  // 📨 [26-10-06] 어제 나간 발주 전부 — 사장님 요약 문자 대신 매장앱에 띄웁니다
+  //    사장님: 「발주완료문자 … 이제 이거 없애주고 차라리 통합앱에 나오게끔해줘. 어제 발주 했던부분 보이게끔 해줘. 가볍게」
+  const sentOrders = [], sentIdx = {};
+  // ⚠️ 수요일은 월요일 것 + 화요일 낮에 넣은 것(화 20:30 예약 · 화요일 날짜로 남음) 둘 다 봅니다
+  const 날짜들 = [전날키];
+  if (뒤로 === 2) { const 화 = new Date(오늘); 화.setDate(화.getDate() - 1); 날짜들.push(formatDate(화)); }
   const cs = getCartSheet_();
   if (cs.getLastRow() > 1) {
     const n = Math.min(500, cs.getLastRow() - 1);
     const v = cs.getRange(cs.getLastRow() - n + 1, 1, n, 9).getValues();
     v.forEach(function (r) {
-      if (String(r[1]).trim() !== 전날키) return;
+      const 줄날짜 = (r[1] instanceof Date) ? formatDate(r[1]) : String(r[1]).trim();
+      if (날짜들.indexOf(줄날짜) < 0) return;
       if (String(r[2]).trim() !== 지점) return;
-      if (String(r[6] || '').indexOf('보냄') !== 0) return;
+      if (String(r[6] || '') !== '보냄' && String(r[6] || '') !== '보냄(실패)') return;   // ⚠️ 「예약보냄」은 표시용이라 뺍니다
       const 업체 = String(r[3] || '').trim();
       const 줄들 = String(r[4] || '').split('\n');
-      const 품목글 = (줄들.length > 1 ? 줄들.slice(1).join(' ') : 줄들[0]).trim();
+      // ⚠️ 짧은 문자(SMS)는 한 줄에 「[백석점 발주 10/5(월)] 대파 5, 고추」 — 머리글을 떼야 첫 품목이 「대파」로 잡힙니다 (26-10-06)
+      const 품목글 = (줄들.length > 1 ? 줄들.slice(1).join(' ') : 줄들[0]).replace(/^\s*\[[^\]]*\]\s*/, '').trim();
       const 품목 = 품목글.split(',').map(function (x) { return x.trim(); }).filter(Boolean);
+      if (sentIdx[업체] === undefined) { sentIdx[업체] = sentOrders.length; sentOrders.push({ supplier: 업체, items: [], at: rowHHMM_(r[0]), failed: false }); }
+      const so = sentOrders[sentIdx[업체]];
+      so.items = so.items.concat(품목);
+      if (String(r[6]) === '보냄(실패)') so.failed = true;
       if (업체 === '사장님') bossOrder = bossOrder.concat(품목);
       if (업체 === '원당')   wondangOrder = wondangOrder.concat(품목);
       if (업체 === '미락') {
@@ -701,6 +716,7 @@ function brief_(p) {
     meatIn: meatIn,
     bossOrder: bossOrder, wondangOrder: wondangOrder,
     daepa: daepa,
+    sentOrders: sentOrders,
     cashShort: null,   // ⚠️ 시재는 마감 GAS 에 있습니다. 나중에 잇습니다
     notices: null,     // ⚠️ 사장님이 적는 곳을 아직 안 만들었습니다
   };
@@ -909,6 +925,12 @@ function getCart(dateStr) {
       if (!보냄[업체]) 보냄[업체] = rowHHMM_(r[0]);
       continue;
     }
+    // 🕗 [26-10-06] 예약 — 앱의 업체 줄에 「10/06 20:30 발송 예약」으로 보입니다. 나가면 「보냄」 줄이 이깁니다
+    if (상태 === '예약') {
+      if (!보냄[업체]) 보냄[업체] = String(r[5] || '').replace(' 발송', '') + ' 예약';
+      continue;
+    }
+    if (상태 === '예약(합침)' || 상태 === '예약보냄') continue;
     if (상태 === '가져갈알림' || 상태 === '가져갈알림(실패)') {
       if (!알림[업체]) 알림[업체] = rowHHMM_(r[0]);
       continue;
@@ -1182,6 +1204,23 @@ function cartSend_(data) {
   const 실패 = [];
   const 요약 = [];
 
+  // 🔴 월요일 14시 뒤 ~ 화요일 20:30 전에 누른 발주는 화요일 20:30 에 나갑니다 (26-10-06)
+  //    사장님: 「월요일 20시이고 시키면 화요일 휴무이기 때문에 화요일 20:30분에 발주가 되게끔
+  //            설정해놨는데, 시키자마자 바로 발주가 가졌어」
+  //    ⚠️ 26-09-27 「발주하기」를 이 길(cart_send)로 바꾸면서 옛 길(handleFoodOrder)의
+  //       화요일 예약을 안 옮겼습니다. 9/25 에 휴무를 빠뜨린 것과 같은 실수를 또 했습니다.
+  //    ⚠️ 기준은 직원앱 isDelayed() 와 같습니다 — 화면 안내문과 서버가 어긋나면 안 됩니다
+  const 예약때 = 화요일예약시각_(now);
+  if (예약때) {
+    const 예약결과 = [];
+    순서.forEach(function (업체) {
+      예약하기_(업체, 업체별[업체], 오늘, biz, String(data.device || ''), 예약때);
+      예약결과.push({ supplier: 업체, ok: true, scheduled: true });
+    });
+    console.log('🕗 화요일 20:30 예약: ' + 순서.join(', '));
+    return jsonResponse({ ok: true, status: 'scheduled', results: 예약결과 });
+  }
+
   const 건너뜀 = [];
   순서.forEach(function (업체) {
     const r = sendCartFor_(업체, 업체별[업체], 오늘, biz, String(data.device || ''));
@@ -1200,6 +1239,86 @@ function cartSend_(data) {
   return jsonResponse({ ok: !실패.length, results: 결과, failed: 실패, skipped: 건너뜀 });
 }
 
+// ══════════════════════════════════════════════════════════
+//  🕗 화요일 20:30 예약 (26-10-06)
+//
+//  언제 예약하나 — 직원앱 isDelayed() 와 같습니다
+//    영업일 월요일 14시 뒤   (화요일 새벽 00:35 도 월요일 영업분입니다)
+//    영업일 화요일 20:30 전  (가게는 쉬지만 수요일 납품 발주를 넣는 날)
+//    ⚠️ 월요일 14시 전은 바로 나갑니다 — 그날 업체가 화요일 아침 납품을 해 줄 수 있어서
+//
+//  어떻게 남기나 — 바구니 시트에 「예약」 줄
+//    F칸 = 보낼 시각(글자)  ·  I칸 = {biz, at, items} JSON
+//    5분마다 도는 sendCartDue 가 시각이 지난 「예약」을 보내고 「예약보냄」으로 바꿉니다
+//    ⚠️ 일회성 트리거를 안 씁니다. 만들다 실패하면 그날 발주가 통째로 빠집니다 (sendCartDue 설명 참고)
+//
+//  같은 업체를 또 누르면 앞 예약에 합칩니다 → 화요일에 문자 한 통
+// ══════════════════════════════════════════════════════════
+function 화요일예약시각_(now) {
+  const bizDate = getBusinessDate(now);
+  const 요일 = bizDate.getDay();
+  const 시 = getBusinessHour(now) + now.getMinutes() / 60;
+  let 화요일;
+  if (요일 === 1 && 시 >= 14) { 화요일 = new Date(bizDate); 화요일.setDate(화요일.getDate() + 1); }
+  else if (요일 === 2 && 시 < 20.5) { 화요일 = new Date(bizDate); }
+  else return null;
+  화요일.setHours(20, 30, 0, 0);
+  return 화요일.getTime() > now.getTime() ? 화요일 : null;
+}
+
+function 예약하기_(업체, items, 오늘, biz, device, 때) {
+  cartLock_(function () {
+    const sheet = getCartSheet_();
+    let 모두 = items.slice();
+    // 같은 날 · 같은 업체의 아직 안 나간 예약이 있으면 합칩니다
+    const last = sheet.getLastRow();
+    if (last >= 2) {
+      const from = Math.max(2, last - 600 + 1);
+      const v = sheet.getRange(from, 1, last - from + 1, 9).getValues();
+      v.forEach(function (r, i) {
+        const 줄날짜 = (r[1] instanceof Date) ? formatDate(r[1]) : String(r[1]);
+        if (줄날짜 !== 오늘 || String(r[3]) !== 업체 || String(r[6]) !== '예약') return;
+        try { 모두 = JSON.parse(String(r[8])).items.concat(모두); } catch (e) {}
+        sheet.getRange(from + i, 7).setValue('예약(합침)');      // ⚠️ 지우지 않습니다
+      });
+    }
+    const 글 = 모두.map(function (it) { return it.item + (it.qty ? ' ' + it.qty : ''); }).join(', ');
+    sheet.appendRow([new Date(), 오늘, '백석점', 업체, 글,
+                     Utilities.formatDate(때, 'Asia/Seoul', 'MM/dd HH:mm') + ' 발송',
+                     '예약', device || '', JSON.stringify({ biz: biz.getTime(), at: 때.getTime(), items: 모두 })]);
+  });
+}
+
+// 5분마다 sendCartDue 가 부릅니다. 시각이 지난 예약을 보냅니다
+function 예약보내기_(now) {
+  const sheet = getCartSheet_();
+  const last = sheet.getLastRow();
+  if (last < 2) return;
+  const from = Math.max(2, last - 600 + 1);
+  const v = sheet.getRange(from, 1, last - from + 1, 9).getValues();
+  const 할것 = [];
+  cartLock_(function () {
+    v.forEach(function (r, i) {
+      if (String(r[6]) !== '예약') return;
+      let j; try { j = JSON.parse(String(r[8])); } catch (e) { return; }
+      if (!j || !(j.at <= now.getTime())) return;
+      // ⚠️ 보내기 전에 먼저 바꿉니다. 문자가 오래 걸려 다음 5분과 겹쳐도 두 번 안 나갑니다
+      sheet.getRange(from + i, 7).setValue('예약보냄');
+      할것.push({ 업체: String(r[3]), 오늘: (r[1] instanceof Date) ? formatDate(r[1]) : String(r[1]),
+                 biz: new Date(j.biz), items: j.items || [], device: String(r[7] || '') });
+    });
+  });
+  if (!할것.length) return;
+  const 요약 = [], 실패 = [];
+  할것.forEach(function (x) {
+    const r = sendCartFor_(x.업체, x.items, x.오늘, x.biz, (x.device || 'server') + ' 예약');
+    if (!r.ok) 실패.push(x.업체 + ': ' + (r.message || '알 수 없음'));
+    else if (!r.skipped) 요약.push(r.body);
+  });
+  if (요약.length) 사장님요약_(할것[0].오늘, 요약, 실패);
+  console.log('🕗 예약 발송: ' + 할것.map(function (x) { return x.업체; }).join(', '));
+}
+
 // ── 사장님께 「오늘 무엇이 나갔나」 ───────────────────────
 //
 //  사장님 말: 「문자가 솔라피를 통해 정확히 보내졌으면 이를 다 정리해서
@@ -1207,7 +1326,13 @@ function cartSend_(data) {
 //
 //  ⚠️ 알림톡 템플릿(ORDER_REPORT)은 고기 발주용 변수를 요구합니다.
 //     식자재에는 안 맞아서 LMS 로 보냅니다. 「가져갈 것」 알림이 쓰는 길과 같습니다.
+// 🔕 26-10-06 사장님: 「발주완료문자가 … 마지막으로 정리용으로 전체 문자가 다오는데 이제 이거 없애주고
+//    차라리 통합앱에 나오게끔해줘 … 그럼 문자 필요없음」 → 매장앱 「어제 보낸 발주」(brief sentOrders)
+//    ⚠️ 지우지 않고 끕니다. 다시 받고 싶으면 true
+//    ⚠️ 발송 **실패** 알림(alertFailure · 메일)은 따로라 그대로 옵니다
+const OWNER_SUMMARY_SMS = false;
 function 사장님요약_(오늘, 보낸것들, 실패) {
+  if (!OWNER_SUMMARY_SMS) { console.log('🔕 사장님 요약 문자 꺼짐 — ' + 보낸것들.length + '건'); return; }
   try {
     // ⚠️ 제목을 따로 줍니다. 안 그러면 본문 앞부분이 잘려 제목이 됩니다 (26-09-29)
     const 제목 = '백석점 발주 완료 ' + 오늘;
@@ -1321,6 +1446,8 @@ function 바구니트리거걸기() {
 // ══════════════════════════════════════════════════════════
 function sendCartDue() {
   const now = new Date();
+  // 🕗 화요일 20:30 예약 (26-10-06) — ⚠️ 여기서 막혀도 아래 알림은 돌아야 합니다
+  try { 예약보내기_(now); } catch (err) { alertFailure('예약 발주 발송 중 오류', '', err.message); }
   const biz = getBusinessDate(now);
   const 오늘 = formatDate(biz);
   const cart = getCart(오늘);
