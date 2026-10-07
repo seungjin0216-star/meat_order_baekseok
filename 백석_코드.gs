@@ -575,7 +575,8 @@ function 날짜글_(v) {
 // ── 그날 쉬나 ───────────────────────────────────────────
 function 우리쉬나_(d) {
   if (d.getDay() === 우리휴무요일_) return true;
-  if (isHoliday(d)) return true;                       // 법정 공휴일
+  // ⚠️ 26-10-07 법정 공휴일 줄을 뺐습니다. 위 v2.2 설명대로 우리 가게는 공휴일에도 엽니다
+  //    (이 함수는 9/25 에 만들고 아무도 안 불러서 틀린 채로 남아 있었습니다. 이제 발주 예약이 부릅니다)
   const key = Utilities.formatDate(d, 'Asia/Seoul', 'yyyy-MM-dd');
   return 임시휴무_().some(function (h) {
     return h.대상 === '전체' && key >= h.시작 && key <= h.끝;
@@ -717,9 +718,30 @@ function brief_(p) {
     bossOrder: bossOrder, wondangOrder: wondangOrder,
     daepa: daepa,
     sentOrders: sentOrders,
+    holidays: 다가오는휴무_(오늘),
     cashShort: null,   // ⚠️ 시재는 마감 GAS 에 있습니다. 나중에 잇습니다
     notices: null,     // ⚠️ 사장님이 적는 곳을 아직 안 만들었습니다
   };
+}
+
+// 📅 26-10-07 「휴무일이 있을 경우 미리 알려줘야 … 대략 5일 전부터 … 휴무일이 끝났을 때 같이 없어지면」
+//    시트 「휴무일」 의 임시휴무만 (정기휴무는 매주라 안 띄움)
+function 다가오는휴무_(오늘) {
+  const 키 = function (d) { return Utilities.formatDate(d, 'Asia/Seoul', 'yyyy-MM-dd'); };
+  const 오늘키 = 키(오늘);
+  const 닷새 = new Date(오늘); 닷새.setDate(닷새.getDate() + 5);
+  const 닷새키 = 키(닷새);
+  return 임시휴무_().filter(function (h) { return h.끝 >= 오늘키 && h.시작 <= 닷새키 && h.대상.indexOf('_취소') < 0; })
+    .map(function (h) {
+      const 전날 = new Date(h.시작 + 'T12:00:00+09:00'); 전날.setDate(전날.getDate() - 1); 전날.setHours(0, 0, 0, 0);
+      let 보낼 = '';
+      if (h.대상 !== '전체') {
+        const 받 = 받을날_(전날, h.대상);
+        const t = new Date(받); t.setDate(t.getDate() - 1); t.setHours(20, 30, 0, 0);
+        보낼 = 때글_(t);
+      }
+      return { target: h.대상, from: h.시작, to: h.끝, sendAt: 보낼 };
+    });
 }
 
 /** 🔍 brief 가 무엇을 주는지 눈으로 보기 — 읽기만 합니다 (안전) */
@@ -792,7 +814,8 @@ function holidayRemove(data) {
     let 지움 = 0;
     for (let i = rows.length - 1; i >= 0; i--) {
       if (날짜글_(rows[i][0]) === 시작 && String(rows[i][2] || '전체').trim() === 대상) {
-        sheet.deleteRow(i + 2);
+        // ⚠️ 26-10-07 지우지 않습니다 (절대 규칙 ④) — 대상에 「_취소」를 붙이면 어느 업체와도 안 맞습니다
+        sheet.getRange(i + 2, 3).setValue(대상 + '_취소');
         지움++;
       }
     }
@@ -1192,7 +1215,7 @@ function cartSend_(data) {
 
   // 업체별로 묶습니다
   const 업체별 = {};
-  const 순서   = [];
+  let   순서   = [];
   items.forEach(function (it) {
     const 업체 = String(it.supplier || '');
     if (!업체) return;
@@ -1210,16 +1233,18 @@ function cartSend_(data) {
   //    ⚠️ 26-09-27 「발주하기」를 이 길(cart_send)로 바꾸면서 옛 길(handleFoodOrder)의
   //       화요일 예약을 안 옮겼습니다. 9/25 에 휴무를 빠뜨린 것과 같은 실수를 또 했습니다.
   //    ⚠️ 기준은 직원앱 isDelayed() 와 같습니다 — 화면 안내문과 서버가 어긋나면 안 됩니다
-  const 예약때 = 화요일예약시각_(now);
-  if (예약때) {
-    const 예약결과 = [];
-    순서.forEach(function (업체) {
-      예약하기_(업체, 업체별[업체], 오늘, biz, String(data.device || ''), 예약때);
-      예약결과.push({ supplier: 업체, ok: true, scheduled: true });
-    });
-    console.log('🕗 화요일 20:30 예약: ' + 순서.join(', '));
-    return jsonResponse({ ok: true, status: 'scheduled', results: 예약결과 });
-  }
+  // 📅 26-10-07 업체마다 따로 — 미락만 쉬면 미락만 예약, 나머지는 바로 (위 발주예약시각_)
+  //    ⚠️ 화요일예약시각_ 은 이제 안 씁니다 (월·화만 보던 것). 지우지 않고 둡니다
+  const 예약된 = [];
+  순서 = 순서.filter(function (업체) {
+    const 때 = 발주예약시각_(now, 업체);
+    if (!때) return true;
+    예약하기_(업체, 업체별[업체], 오늘, biz, String(data.device || ''), 때);
+    예약된.push({ supplier: 업체, ok: true, scheduled: true, at: 때글_(때) });
+    return false;
+  });
+  if (예약된.length) console.log('🕗 예약: ' + 예약된.map(function (x) { return x.supplier + ' ' + x.at; }).join(', '));
+  if (!순서.length) return jsonResponse({ ok: true, status: 'scheduled', results: 예약된 });
 
   const 건너뜀 = [];
   순서.forEach(function (업체) {
@@ -1236,7 +1261,7 @@ function cartSend_(data) {
   if (요약.length) 사장님요약_(오늘, 요약, 실패);
   if (건너뜀.length) console.log('♻️ 같은 발주라 건너뜀: ' + 건너뜀.join(', '));
 
-  return jsonResponse({ ok: !실패.length, results: 결과, failed: 실패, skipped: 건너뜀 });
+  return jsonResponse({ ok: !실패.length, results: 결과.concat(예약된), failed: 실패, skipped: 건너뜀 });
 }
 
 // ══════════════════════════════════════════════════════════
@@ -1266,6 +1291,41 @@ function 화요일예약시각_(now) {
   return 화요일.getTime() > now.getTime() ? 화요일 : null;
 }
 
+// ══════════════════════════════════════════════════════════
+//  📅 업체·가게 휴무 반영 예약 (26-10-07)
+//
+//  사장님 「절대적인 조건」:
+//    「휴무일이 있으면 휴무일이 끝나 다음날 영업날에 발주를 받게끔 영업일 전날에 발주가 들어가져야 함」
+//    「미락업체가 만약 월요일 휴무다 > 일,월,화 발주받지않음 > 수요일 정상영업이기에 화요일 20:30분에 발주연락」
+//
+//  받을날_ = 「우리도 열고 그 업체도 여는」 첫날 (정기휴무 + 시트 「휴무일」 임시휴무)
+//    받을날이 내일이면           → 바로 (평소)
+//    받을날이 더 뒤면             → 받을날 전날 20:30
+//    오늘 가게가 쉬는 날(화) 낮   → 오늘 20:30 (예전 그대로)
+//    월요일 14시 전 · 수요일 받음  → 바로 (예전 그대로 · 직원앱 안내문과 같음)
+//  ⚠️ 예약 시각이 이미 지났으면 바로
+// ══════════════════════════════════════════════════════════
+function 같은날_(a, b) { return formatDate(a) === formatDate(b); }
+function 발주예약시각_(now, 업체) {
+  const biz = getBusinessDate(now);
+  const 시 = getBusinessHour(now) + now.getMinutes() / 60;
+  const 다음 = new Date(biz); 다음.setDate(다음.getDate() + 1);
+  const 받 = 받을날_(biz, 업체);
+  if (우리쉬나_(biz) && 같은날_(받, 다음)) {
+    const 오늘저녁 = new Date(biz); 오늘저녁.setHours(20, 30, 0, 0);
+    return 오늘저녁.getTime() > now.getTime() ? 오늘저녁 : null;
+  }
+  if (같은날_(받, 다음)) return null;
+  const 모레 = new Date(biz); 모레.setDate(모레.getDate() + 2);
+  if (biz.getDay() === 1 && 시 < 14 && 같은날_(받, 모레)) return null;
+  const 보낼 = new Date(받); 보낼.setDate(보낼.getDate() - 1); 보낼.setHours(20, 30, 0, 0);
+  return 보낼.getTime() > now.getTime() ? 보낼 : null;
+}
+function 때글_(d) {
+  return (d.getMonth() + 1) + '/' + d.getDate() + '(' + ['일','월','화','수','목','금','토'][d.getDay()] + ') ' +
+         String(d.getHours()).padStart(2, '0') + ':' + String(d.getMinutes()).padStart(2, '0');
+}
+
 function 예약하기_(업체, items, 오늘, biz, device, 때) {
   cartLock_(function () {
     const sheet = getCartSheet_();
@@ -1284,7 +1344,7 @@ function 예약하기_(업체, items, 오늘, biz, device, 때) {
     }
     const 글 = 모두.map(function (it) { return it.item + (it.qty ? ' ' + it.qty : ''); }).join(', ');
     sheet.appendRow([new Date(), 오늘, '백석점', 업체, 글,
-                     Utilities.formatDate(때, 'Asia/Seoul', 'MM/dd HH:mm') + ' 발송',
+                     때글_(때) + ' 발송',
                      '예약', device || '', JSON.stringify({ biz: biz.getTime(), at: 때.getTime(), items: 모두 })]);
   });
 }
