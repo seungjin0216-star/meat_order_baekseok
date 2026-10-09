@@ -321,7 +321,7 @@ function doGet(e) {
   if (p.action === 'cart') {
     const json = JSON.stringify(getCart(p.date));
     if (p.callback) {
-      return ContentService.createTextOutput(p.callback + '(' + json + ')')
+      return ContentService.createTextOutput(p.callback + '(' + json + ')' + 옛판깨우기_())
         .setMimeType(ContentService.MimeType.JAVASCRIPT);
     }
     return ContentService.createTextOutput(json).setMimeType(ContentService.MimeType.JSON);
@@ -552,7 +552,7 @@ function 임시휴무_() {
       sheet.getRange(2, 1, last - 1, 4).getValues().forEach(function (r) {
         const s = 날짜글_(r[0]), e = 날짜글_(r[1]) || 날짜글_(r[0]);
         if (!s) return;
-        _임시휴무.push({ 시작: s, 끝: e, 대상: String(r[2] || '전체').trim() });
+        _임시휴무.push({ 시작: s, 끝: e, 대상: String(r[2] || '전체').trim(), 사유: String(r[3] || '') });
       });
     }
   } catch (err) {
@@ -827,8 +827,10 @@ function holidayRemove(data) {
 function holidayList() {
   const 오늘 = Utilities.formatDate(new Date(), 'Asia/Seoul', 'yyyy-MM-dd');
   // 이미 지난 것은 안 보여줍니다. 시트에는 기록으로 남습니다.
-  return 임시휴무_().filter(function (h) { return h.끝 >= 오늘; })
-    .map(function (h) { return { from: h.시작, to: h.끝, target: h.대상 }; });
+  // ⚠️ 26-10-09 「_취소」 를 걸러야 합니다 — 안 거르면 「미락_취소」가 목록에 그대로 보였습니다
+  return 임시휴무_().filter(function (h) { return h.끝 >= 오늘 && h.대상.indexOf('_취소') < 0; })
+    .sort(function (a, b) { return a.시작 < b.시작 ? -1 : 1; })
+    .map(function (h) { return { from: h.시작, to: h.끝, target: h.대상, reason: h.사유 || '' }; });
 }
 
 // ── 담기 ────────────────────────────────────────────────
@@ -2703,3 +2705,23 @@ function 주류설정_(data) {
   const cur = 주류저장_(date, { stock: data.stock || {}, checks: data.checks || {}, device: data.device || '' });
   return jsonResponse({ ok: true, liquor: cur });
 }
+
+// ══════════════════════════════════════════════════════════
+//  🔄 옛 판 깨우기 (26-10-09)
+//
+//  사장님: 「알아서 업데이트 할 수 있게 할 수는 없나?」
+//  10/8 마감한 아이폰(78mn · 정성훈 님 폰으로 보임)이 며칠째 옛 판 — 이름 빈칸 · 마감 알림 안 감
+//  옛 판에는 「새 판 확인」이 켤 때 한 번뿐이라 앱 안에서는 못 고칩니다.
+//  → 모든 판이 15초마다 부르는 바구니(action=cart) 답 뒤에 한 줄을 붙입니다:
+//     그 폰의 APP_VERSION 이 최소판보다 낮고, 창이 안 열려 있으면 새로고침 (10분에 한 번만 — 헛돌기 막기)
+//  ⚠️ 옛 발주앱(food.html)은 APP_VERSION 이 없어 아무 일도 안 합니다
+//  ⚠️ 직원앱을 올릴 때마다 최소판을 올릴 필요는 없습니다. v16 부터는 앱이 스스로 확인합니다
+// ══════════════════════════════════════════════════════════
+function 옛판깨우기_() {
+  const 최소판_ = '2026-10-09-v16';   // ⚠️ 함수 밖 const 로 두면 doGet 안에 끼어 「before initialization」 (26-10-09 실제로 남)
+  return ';(function(){try{if(typeof APP_VERSION==="string"&&APP_VERSION<"' + 최소판_ + '"){' +
+    'var o=document.getElementById("ov");if(o&&o.classList.contains("show"))return;' +
+    'var k="store-wake",t=+(localStorage.getItem(k)||0);if(Date.now()-t<6e5)return;' +
+    'localStorage.setItem(k,Date.now());try{flushChecks();flushCart();}catch(e){}setTimeout(function(){location.reload();},900);}}catch(e){}})();';
+}
+
