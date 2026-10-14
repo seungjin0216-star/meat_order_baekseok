@@ -1785,7 +1785,7 @@ function handleOrder(data) {
   const 정정날짜 = 정정 ? ' ⚠️정정' : '';
   if (앞발주수 > 0) console.log('정정 발주 | 앞 발주 ' + 앞발주수 + '줄 대체됨 · 예약중:' + 예약중);
 
-  logOrderToSheet(dateStr, gcUse, gcDone, gcIng, currentStock, target, gcOrder, dc, mc, extras, isMondayDelay);
+  logOrderToSheet(dateStr, gcUse, gcDone, gcIng, currentStock, target, gcOrder, dc, mc, extras, isMondayDelay, 고기요일글_(data.days));
 
   const orderParts = ['곱창 ' + gcOrder + '개'];
   if (dc > 0) orderParts.push('대창 ' + dc + '개');
@@ -1832,9 +1832,9 @@ function handleOrder(data) {
       }
       sendAlimtalk(CONFIG.OWNER_NUMBER, CONFIG.KAKAO.TEMPLATES.ORDER_REPORT, {
         '날짜'     : dateStr,
-        '쓰는것'   : String(gcUse),
-        '연육완료' : String(gcDone),
-        '연육중'   : String(gcIng),
+        '쓰는것'   : String(gcUse) + 요일괄호_(data.days, 'use'),
+        '연육완료' : String(gcDone) + 요일괄호_(data.days, 'done'),
+        '연육중'   : String(gcIng) + 요일괄호_(data.days, 'ing'),
         '목표'     : String(target) + (bigoNote ? bigoNote : ''),
         '발주요약' : 정정머리 + orderSummary + '\n▶ 예약시각이 지나 바로 발송했습니다',
       });
@@ -1857,9 +1857,9 @@ function handleOrder(data) {
 
     const rp = sendAlimtalk(CONFIG.OWNER_NUMBER, CONFIG.KAKAO.TEMPLATES.ORDER_REPORT, {
       '날짜'     : dateStr + ' ⏰예약',
-      '쓰는것'   : String(gcUse),
-      '연육완료' : String(gcDone),
-      '연육중'   : String(gcIng),
+      '쓰는것'   : String(gcUse) + 요일괄호_(data.days, 'use'),
+      '연육완료' : String(gcDone) + 요일괄호_(data.days, 'done'),
+      '연육중'   : String(gcIng) + 요일괄호_(data.days, 'ing'),
       '목표'     : String(target) + (bigoNote ? bigoNote : ''),
       '발주요약' : orderSummary + '\n▶ ' + sendDayLabel + ' 20:00 업체 자동발송' +
                    (앞발주수 > 0 ? '\n▶ 앞서 넣은 예약을 이것으로 바꿨습니다' : ''),
@@ -1880,9 +1880,9 @@ function handleOrder(data) {
 
   const r1 = sendAlimtalk(CONFIG.OWNER_NUMBER, CONFIG.KAKAO.TEMPLATES.ORDER_REPORT, {
     '날짜'     : dateStr + 정정날짜,
-    '쓰는것'   : String(gcUse),
-    '연육완료' : String(gcDone),
-    '연육중'   : String(gcIng),
+    '쓰는것'   : String(gcUse) + 요일괄호_(data.days, 'use'),
+    '연육완료' : String(gcDone) + 요일괄호_(data.days, 'done'),
+    '연육중'   : String(gcIng) + 요일괄호_(data.days, 'ing'),
     '목표'     : String(target) + (bigoNote ? bigoNote : ''),
     '발주요약' : 정정머리 + orderSummary,
   });
@@ -2470,7 +2470,21 @@ function sendSms(to, text, type, subject) {
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 //  ⑩ 스프레드시트 기록
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-function logOrderToSheet(dateStr, gcUse, gcDone, gcIng, total, target, gcOrder, dc, mc, extras, isMondayDelay) {
+// 📅 26-10-14 사장님: 「고기 요일 … 쓰고 있는 것과 연육 완료, 연육 중 … 여기서 요일도 체크하게끔 … 요일만 체크해도 대강 어느 정도인지 아니까」
+//    앱이 {use:['월'], done:['월','화'], ing:['수']} 를 보내면 「쓰는것 월 · 연육완료 월,화 · 연육중 수」 한 줄로 O칸에
+// 사장님 발주 알림톡의 숫자 옆에 「 (화·수)」 — 26-10-14 「사장이 받는 발주에 요일 정리까지 해서 보내줄 수 있나」
+//    ⚠️ 업체 알림톡(VENDOR_ORDER)에는 안 넣습니다
+function 요일괄호_(d, k) {
+  const a = ((d || {})[k] || []).filter(Boolean);
+  return a.length ? ' (' + a.join('·') + ')' : '';
+}
+function 고기요일글_(d) {
+  if (!d) return '';
+  const 이름 = { use: '쓰는것', done: '연육완료', ing: '연육중' };
+  return ['use', 'done', 'ing'].filter(function (k) { return (d[k] || []).filter(Boolean).length; })
+    .map(function (k) { return 이름[k] + ' ' + d[k].filter(Boolean).join(','); }).join(' · ');
+}
+function logOrderToSheet(dateStr, gcUse, gcDone, gcIng, total, target, gcOrder, dc, mc, extras, isMondayDelay, 요일) {
   const ss    = SpreadsheetApp.openById(CONFIG.SPREADSHEET_ID);
   const sheet = ss.getSheetByName(CONFIG.SHEET_ORDER) || ss.insertSheet(CONFIG.SHEET_ORDER);
   if (sheet.getLastRow() === 0) {
@@ -2480,7 +2494,8 @@ function logOrderToSheet(dateStr, gcUse, gcDone, gcIng, total, target, gcOrder, 
   const holidayNote = target > baseTarget ? '연휴보정' : '-';
   const delayNote   = isMondayDelay ? ' (휴무 지연발송)' : '';
   // [v5.1] M 상태(정정되면 「대체됨」) · N 보낸 시각 — 매장앱이 두 폰에서 같이 봅니다
-  sheet.appendRow([dateStr,'백석점',gcUse,gcDone,gcIng,total,target,gcOrder,dc,mc,extras.join(', '),holidayNote+delayNote,'',보낸시각_()]);
+  // ⚠️ O칸 = 고기 요일 (26-10-14) · 앞 칸들은 그대로 (손익·meatToday 가 읽는 자리)
+  sheet.appendRow([dateStr,'백석점',gcUse,gcDone,gcIng,total,target,gcOrder,dc,mc,extras.join(', '),holidayNote+delayNote,'',보낸시각_(),요일 || '']);
 }
 
 function logStockToSheet(dateStr, gc, dc, mc, bs, extras) {
