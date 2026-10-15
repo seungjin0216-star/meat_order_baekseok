@@ -72,6 +72,24 @@
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 const _PROPS = PropertiesService.getScriptProperties();
 
+// ══════════════════════════════════════════════════════════
+//  📞 번호는 코드 밖으로 (26-10-15 · 문서/20_보안_점검표.md 3-②)
+//  사장님: 「ab 전부 진행해줘」 — 저장소가 공개라 업체·사장님 번호가 그대로 보였습니다
+//  스크립트 속성 PHONES_JSON 한 칸에 전부. 처음 한 번은 아래 옛번호_ 로 채우고, 다음 판에서 옛번호_ 를 비웁니다
+//  번호를 바꿀 때: Apps Script → 프로젝트 설정 → 스크립트 속성 → PHONES_JSON
+// ══════════════════════════════════════════════════════════
+// ⚠️ 26-10-15 2단계 — 번호는 스크립트 속성 PHONES_JSON 에만 있습니다 (1단계 @32 에서 옮김 · 코드에선 비움)
+//    속성이 지워지면 문자가 안 나갑니다 → git 기록(@32 판)에서 옛번호_ 를 찾아 다시 넣을 것
+const 옛번호_ = { SENDER: '', 업체: {} };
+function 번호표_() {
+  if (번호표_.v) return 번호표_.v;
+  let v = null;
+  try { v = JSON.parse(_PROPS.getProperty('PHONES_JSON') || 'null'); } catch (e) {}
+  if (!v && 옛번호_.SENDER) { _PROPS.setProperty('PHONES_JSON', JSON.stringify(옛번호_)); v = 옛번호_; }
+  번호표_.v = v || { 업체: {} };
+  return 번호표_.v;
+}
+
 const CONFIG = {
   SOLAPI_API_KEY    : (_PROPS.getProperty('SOLAPI_API_KEY')    || '').trim(),
   SOLAPI_API_SECRET : (_PROPS.getProperty('SOLAPI_API_SECRET') || '').trim(),
@@ -79,13 +97,13 @@ const CONFIG = {
   // 발송이 실패했을 때 알림을 받을 이메일 (솔라피가 막혀도 이건 나감)
   OWNER_EMAIL       : 'seungjin0216@gmail.com',
 
-  SENDER_NUMBER     : '01041216995',
+  SENDER_NUMBER     : 번호표_().SENDER || '',
   // 🔁 26-10-06 사장님: 「고기 입고 발주 문자 받는 번호 바꿔야해 … 서로 바꿔줘」
-  //    전: VENDOR 01041216995 · OWNER 01053226995   → 지금 반대
+  //    전: VENDOR 끝4121 · OWNER 끝5322   → 지금 반대
   //    ⚠️ 이 둘은 고기 발주·입고 알림톡에만 씁니다. 식자재·바구니 번호(CART_ALERT_PHONE 등)는 그대로
-  VENDOR_NUMBER     : '01053226995',
-  OWNER_NUMBER      : '01041216995',
-  BAESEOK_ADMIN     : '01041216995',
+  VENDOR_NUMBER     : 번호표_().VENDOR || '',
+  OWNER_NUMBER      : 번호표_().OWNER || '',
+  BAESEOK_ADMIN     : 번호표_().ADMIN || '',
 
   KAKAO: {
     PFID : 'KA01PF260426075804420VO8o8M5w9IQ',
@@ -111,7 +129,7 @@ const CONFIG = {
     // ══════════════════════════════════════════════════════
     //  🔴 업체 전화번호 — 여기가 진짜입니다 (2026-09-27 수정)
     //
-    //  ⚠️ 그전에는 전부 'TODO' 로 사장님 번호(01041216995)가 들어 있었습니다.
+    //  ⚠️ 그전에는 전부 'TODO' 로 사장님 번호(끝 4121)가 들어 있었습니다.
     //     화면(food.html CFG.PHONES)에만 진짜 번호가 있었고,
     //     handleFoodOrder 는 앱이 보낸 번호를 먼저 보니 괜찮았습니다.
     //     ⚠️ 그런데 바구니로 나가는 길(sendCartFor_)은 여기만 봅니다.
@@ -121,17 +139,7 @@ const CONFIG = {
     //  ⚠️ 번호를 바꿀 때는 food.html CFG.PHONES 도 같이 고치십시오.
     //     두 곳에 있는 값입니다. 앱은 화면 표시에 씁니다.
     // ══════════════════════════════════════════════════════
-    PHONES: {
-      '미락'    : '01089421859',
-      '콩나물'  : '01062333466',
-      '주류'    : '01056079640',
-      '음료수'  : '01037982411',
-      '사장님'  : '01053226995',
-      // 아래 셋은 사장님이 직접 사 오는 것들입니다. 사장님 번호가 맞습니다.
-      '원당'    : '01041216995',
-      '네이버'  : '01041216995',
-      '배달관련': '01041216995',
-    },
+    PHONES: 번호표_().업체,   // 📞 26-10-15 스크립트 속성 PHONES_JSON (번호표_)
   },
 
   HOLIDAY_API_KEY : '',
@@ -318,6 +326,12 @@ function doGet(e) {
     }
     return ContentService.createTextOutput(json).setMimeType(ContentService.MimeType.JSON);
   }
+  // 📞 번호가 스크립트 속성에 있나 — 번호는 보여주지 않고 개수만 (26-10-15)
+  if (p.action === 'phonesok') {
+    const v = 번호표_(), 속성 = !!_PROPS.getProperty('PHONES_JSON');
+    return ContentService.createTextOutput(JSON.stringify({ ok: 속성, 업체수: Object.keys(v.업체 || {}).length,
+      빈칸: ['SENDER', 'VENDOR', 'OWNER', 'ADMIN', 'CART_ALERT', 'NOTIFY_사장님'].filter(function (k) { return !v[k]; }) })).setMimeType(ContentService.MimeType.JSON);
+  }
   if (p.action === 'cart') {
     const json = JSON.stringify(getCart(p.date));
     if (p.callback) {
@@ -420,7 +434,7 @@ function doPost(e) {
 //  알림 (자동 발송 대신)
 //    21:30   미락 — 22:30 마감 전에 알립니다
 //    23:30   나머지
-//    ⚠️ 01041216995 로만 갑니다 (사장님 지정 2026-09-27)
+//    ⚠️ 사장님 번호(끝 4121)로만 갑니다 (사장님 지정 2026-09-27)
 //
 //    주류      ⚠️ 바구니를 안 씁니다. 재고를 세어 그 자리에서 보냅니다
 //              사장님: 「주류는 지금처럼이 딱 좋아」
@@ -448,8 +462,8 @@ const CART_SKIP = ['주류'];
 //  자동 발송을 껐으므로 「넣으세요」를 알려주는 것이 유일한 안전장치입니다.
 //  ⚠️ 이게 안 오면 발주가 통째로 빠집니다. 여기를 지우지 마십시오.
 //
-//  사장님 지정: 01041216995 로만 보냅니다
-const CART_ALERT_PHONE = '01041216995';
+//  사장님 지정: 사장님 번호(끝 4121)로만 보냅니다
+const CART_ALERT_PHONE = 번호표_().CART_ALERT || '';
 
 // 몇 시에 어느 업체를 알릴 것인가. 영업일 기준 시각입니다 (24시 = 자정)
 //   ⚠️ 미락은 22:30 이 업체 마감이라 21:30 에 알립니다. 한 시간 여유
@@ -478,10 +492,10 @@ const CART_ALERT_SMS = false;
 //  새벽 00:25 문자는 「무엇이 떨어졌나」이고,
 //  14시 문자는 「오늘 들러서 가져갈 것」입니다. 쓰임이 다릅니다.
 //
-//  ⚠️ 새벽 문자는 01053226995 로, 낮 알림은 01041216995 로 갑니다.
+//  ⚠️ 새벽 문자는 끝 5322 로, 낮 알림은 끝 4121 로 갑니다.
 //     둘은 다른 번호이고 다른 시각입니다.
 const CART_NOTIFY = {
-  '사장님': { 번호: '01041216995', hour: 14, min: 0 },
+  '사장님': { 번호: 번호표_().NOTIFY_사장님 || '', hour: 14, min: 0 },
 };
 
 // 그 영업일 것을 언제 알릴 것인가 — 문자가 나간 날(영업일+1) 낮입니다
@@ -1641,8 +1655,11 @@ function sendCartFor_(업체, items, 오늘, biz, device) {
   const body = (channel === 'LMS') ? 품목글 : ('[' + 제목 + '] ' + 품목글);
   // ⚠️ 앱이 보낸 번호를 먼저 씁니다 (handleFoodOrder 와 같은 규칙).
   //    26-09-27 까지 여기만 CONFIG 를 먼저 봐서 사장님 번호로 나갔습니다.
-  const 앱번호 = items.length ? String(items[0].phone || '') : '';
-  const phone = (앱번호 || String(CONFIG.FOOD.PHONES[업체] || '')).replace(/-/g, '');
+  // 🔴 26-10-15 보안 점검표 3-① — 앱이 보낸 번호는 **쓰지 않습니다** (등록된 업체 번호만)
+  //    전에는 앱 번호를 먼저 써서, 서버 주소를 아는 누구나 아무 번호로 우리 솔라피 문자를 보낼 수 있었습니다
+  const 앱번호 = items.length ? String(items[0].phone || '').replace(/-/g, '') : '';
+  const phone = String(CONFIG.FOOD.PHONES[업체] || '').replace(/-/g, '');
+  if (앱번호 && 앱번호 !== phone) console.log('⚠️ 앱이 다른 번호를 보냄 — 무시하고 등록 번호로 (' + 업체 + ')');
 
   if (!phone) {
     alertFailure('바구니 발송 실패 — 전화번호 없음', 업체 + ' / ' + body, '전화번호가 비어 있습니다');
@@ -2119,7 +2136,7 @@ function handleFoodOrder(data) {
     const results = [];
     const 실패   = [];
     msgs.forEach(function(m) {
-      const phone = (m.phone || CONFIG.FOOD.PHONES[m.supplier] || '').replace(/-/g, '');
+      const phone = String(CONFIG.FOOD.PHONES[m.supplier] || '').replace(/-/g, '');   // 🔴 26-10-15 등록 번호만 (보안 3-①)
       if (!phone) {
         console.log(m.supplier + ' 전화번호 없음 → skip');
         results.push({ supplier: m.supplier, ok: false, message: '전화번호 없음' });
@@ -2195,7 +2212,7 @@ function sendPendingFoodOrder() {
 
   const 실패 = [];
   pending.msgs.forEach(function(m) {
-    const phone = (m.phone || CONFIG.FOOD.PHONES[m.supplier] || '').replace(/-/g, '');
+    const phone = String(CONFIG.FOOD.PHONES[m.supplier] || '').replace(/-/g, '');   // 🔴 26-10-15 등록 번호만 (보안 3-①)
     if (!phone) {
       console.log(m.supplier + ' 전화번호 없음 → skip');
       실패.push(m.supplier + ': 전화번호 없음');
