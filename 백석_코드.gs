@@ -1071,9 +1071,11 @@ function getCart(dateStr) {
   담긴것.reverse();   // 담은 순서대로
   const 주류 = 주류상태_(date);
   if (주류.sent && !보냄['주류']) 보냄['주류'] = 주류.sent;
+  let 예약목록 = []; try { 예약목록 = 대기예약_(''); } catch (e) {}
   return { ok: true, date: date, items: 담긴것, sent: 보냄, liquor: 주류,
            notified: 알림, alerted: 발주알림, alertedTwice: 발주알림두번,
-           deadlines: cartDeadlines_(biz) };
+           deadlines: cartDeadlines_(biz),
+           reserved: 예약목록.map(function (x) { return { supplier: x.supplier, when: x.when, items: x.items.map(function (i) { return { item: i.item, qty: i.qty || '' }; }) }; }) };
 }
 
 // ══════════════════════════════════════════════════════════
@@ -1264,6 +1266,15 @@ function cartSend_(data) {
 
   const 건너뜀 = [];
   순서.forEach(function (업체) {
+    // 📦 26-10-18 받을 날이 같은 예약이 남아 있으면 지금 것에 합쳐 한 통으로 (예약 줄은 「예약(합침)」 · 지우지 않음)
+    try {
+      const 받키 = Utilities.formatDate(받을날_(biz, 업체), 'Asia/Seoul', 'yyyy-MM-dd');
+      대기예약_(업체).filter(function (x) { return x.받을날 === 받키; }).forEach(function (x) {
+        업체별[업체] = x.items.concat(업체별[업체]);
+        getCartSheet_().getRange(x.row, 7).setValue('예약(합침)');
+        console.log('📦 예약 합침: ' + 업체 + ' ' + x.when);
+      });
+    } catch (e) { console.log('예약 합치기 못 함(그대로 보냄): ' + e.message); }
     const r = sendCartFor_(업체, 업체별[업체], 오늘, biz, String(data.device || ''));
     결과.push({ supplier: 업체, ok: r.ok, skipped: !!r.skipped });
     if (!r.ok) 실패.push(업체 + ': ' + (r.message || '알 수 없음'));
@@ -1337,6 +1348,23 @@ function 발주예약시각_(now, 업체) {
   const 보낼 = new Date(받); 보낼.setDate(보낼.getDate() - 1); 보낼.setHours(20, 30, 0, 0);
   return 보낼.getTime() > now.getTime() ? 보낼 : null;
 }
+/* 📦 아직 안 나간 예약 (26-10-18) — 받을 날이 같은 지금 발주에 합치고 · 직원앱에 「이미 예약된 것」으로 보여 줌
+   사장님: 「토요일에 미리보기 해서 보냈던 품목을 알 수가 없으니 중복으로 체크할 것 같음 … 다음날 영업일에 맞춰 발주를 모아둘 때 확인할 수 있게」
+   받을 날 = 보낼 시각(전날 20:30)의 다음 날 */
+function 대기예약_(업체) {
+  const sheet = getCartSheet_(), last = sheet.getLastRow(), out = [];
+  if (last < 2) return out;
+  const from = Math.max(2, last - 600 + 1), v = sheet.getRange(from, 1, last - from + 1, 9).getValues(), now = Date.now();
+  v.forEach(function (r, i) {
+    if (String(r[6]) !== '예약' || (업체 && String(r[3]) !== 업체)) return;
+    let j; try { j = JSON.parse(String(r[8])); } catch (e) { return; }
+    if (!j || !(j.at > now)) return;
+    const 받 = new Date(j.at); 받.setDate(받.getDate() + 1);
+    out.push({ row: from + i, supplier: String(r[3]), when: String(r[5] || '').replace(' 발송', ''), at: j.at,
+               받을날: Utilities.formatDate(받, 'Asia/Seoul', 'yyyy-MM-dd'), items: j.items || [] });
+  });
+  return out;
+}
 function 때글_(d) {
   return (d.getMonth() + 1) + '/' + d.getDate() + '(' + ['일','월','화','수','목','금','토'][d.getDay()] + ') ' +
          String(d.getHours()).padStart(2, '0') + ':' + String(d.getMinutes()).padStart(2, '0');
@@ -1352,9 +1380,12 @@ function 예약하기_(업체, items, 오늘, biz, device, 때) {
       const from = Math.max(2, last - 600 + 1);
       const v = sheet.getRange(from, 1, last - from + 1, 9).getValues();
       v.forEach(function (r, i) {
-        const 줄날짜 = (r[1] instanceof Date) ? formatDate(r[1]) : String(r[1]);
-        if (줄날짜 !== 오늘 || String(r[3]) !== 업체 || String(r[6]) !== '예약') return;
-        try { 모두 = JSON.parse(String(r[8])).items.concat(모두); } catch (e) {}
+        // 🔁 26-10-18 같은 「날」이 아니라 같은 「보낼 시각」이면 합칩니다
+        //    사장님: 토요일 21시 예약 + 일요일에 또 넣으면 → 둘 다 일요일 20:30 (월요일 받음) 인데 따로 나가던 것
+        if (String(r[3]) !== 업체 || String(r[6]) !== '예약') return;
+        let j0; try { j0 = JSON.parse(String(r[8])); } catch (e) { return; }
+        if (!j0 || j0.at !== 때.getTime()) return;
+        모두 = (j0.items || []).concat(모두);
         sheet.getRange(from + i, 7).setValue('예약(합침)');      // ⚠️ 지우지 않습니다
       });
     }
