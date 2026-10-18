@@ -751,7 +751,7 @@ function 다가오는휴무_(오늘) {
       let 보낼 = '';
       if (h.대상 !== '전체') {
         const 받 = 받을날_(전날, h.대상);
-        const t = new Date(받); t.setDate(t.getDate() - 1); t.setHours(20, 30, 0, 0);
+        const t = new Date(받); t.setDate(t.getDate() - 1); t.setHours(20, 30, 0, 0);   // 26-10-18 22:00 으로 바꿨다가 같은 날 20:30 으로 되돌림 (사장님 「화요일 20시 30분 … 동일하게」)
         보낼 = 때글_(t);
       }
       return { target: h.대상, from: h.시작, to: h.끝, sendAt: 보낼 };
@@ -949,13 +949,30 @@ function getCart(dateStr) {
   const 발주알림  = {};   // [v4.0] 「발주 넣으세요」를 알린 시각 (영업일 기준 분)
   const 발주알림두번 = {};
 
+  /* 📦 26-10-18 이어 담기 — 사장님 「토요일 담은 식자재는 일요일까지 유효하게끔」
+     오늘 바구니를 볼 때, 어제 담고 안 보낸 업체 중 「어제 보냈어도 오늘 보내도 받는 날이 같은」 업체(미락 토→일)는 어제 것을 오늘 바구니에 넣음
+     ⚠️ 오늘 화면(date 를 안 주거나 오늘)일 때만 · 어제가 우리 휴무면 안 함 */
+  const 이어 = {}, 어제 = new Date(biz); 어제.setDate(어제.getDate() - 1);
+  const 어제글 = formatDate(어제);
+  if (date === formatDate(biz) && !우리쉬나_(어제)) {
+    const 어제업체 = {}, 어제나감 = {};
+    rows.forEach(function (r) { const d = (r[1] instanceof Date) ? formatDate(r[1]) : String(r[1]); if (d !== 어제글) return;
+      const st = String(r[6]); if (st === '담김' || st === '정함') 어제업체[String(r[3])] = true; if (/^(보냄|예약)/.test(st)) 어제나감[String(r[3])] = true; });
+    Object.keys(어제업체).forEach(function (u) {
+      if (어제나감[u]) return;
+      try { if (같은날_(받을날_(어제, u), 받을날_(biz, u))) 이어[u] = true; } catch (e) {}
+    });
+  }
+
   for (let i = rows.length - 1; i >= 0; i--) {
     const r = rows[i];
     // ⚠️ 영업일은 '26.09.22(화)' 같은 글자로 저장돼 있습니다.
     //    이걸 다시 날짜로 바꾸려 하면 Invalid Date 가 되어 하루치가 통째로 안 잡힙니다.
     //    시트가 날짜로 인식해 버린 줄만 formatDate 를 태웁니다.
     const 줄날짜 = (r[1] instanceof Date) ? formatDate(r[1]) : String(r[1]);
-    if (줄날짜 !== date) continue;
+    if (줄날짜 !== date) {
+      if (!(줄날짜 === 어제글 && 이어[String(r[3])] && /^(담김|정함|끔|뺌)$/.test(String(r[6])))) continue;   // 📦 이어 담기
+    }
 
     const 업체 = String(r[3]);
     const 상태 = String(r[6]);
@@ -1072,9 +1089,18 @@ function getCart(dateStr) {
   const 주류 = 주류상태_(date);
   if (주류.sent && !보냄['주류']) 보냄['주류'] = 주류.sent;
   let 예약목록 = []; try { 예약목록 = 대기예약_(''); } catch (e) {}
+  /* ⏰ 26-10-18 01시 일괄 발송 대상 — 담겼는데 안 나간 업체 (주류는 따로 · 내일 업체가 쉬어 이어 담길 업체는 뺌)
+     사장님 「콩나물을 담아 놓고 발주 안 하는 경우 … 00시 30분에 알림 · 01시에 일괄적으로 그냥 주문 보내 줘」 */
+  const 일괄 = [];
+  if (date === formatDate(biz)) {
+    const 내일 = new Date(biz); 내일.setDate(내일.getDate() + 1);
+    const 업체들 = {}; 담긴것.forEach(function (it) { if (it.supplier !== '주류' && CART_SKIP.indexOf(it.supplier) < 0 && !보냄[it.supplier]) 업체들[it.supplier] = true; });
+    Object.keys(업체들).forEach(function (u) { try { if (우리쉬나_(내일) || 같은날_(받을날_(biz, u), 내일)) 일괄.push(u); } catch (e) { 일괄.push(u); } });
+  }
   return { ok: true, date: date, items: 담긴것, sent: 보냄, liquor: 주류,
            notified: 알림, alerted: 발주알림, alertedTwice: 발주알림두번,
            deadlines: cartDeadlines_(biz),
+           auto01: 일괄, carried: Object.keys(이어),
            reserved: 예약목록.map(function (x) { return { supplier: x.supplier, when: x.when, items: x.items.map(function (i) { return { item: i.item, qty: i.qty || '' }; }) }; }) };
 }
 
@@ -1255,7 +1281,14 @@ function cartSend_(data) {
   //    ⚠️ 화요일예약시각_ 은 이제 안 씁니다 (월·화만 보던 것). 지우지 않고 둡니다
   const 예약된 = [];
   순서 = 순서.filter(function (업체) {
-    const 때 = 발주예약시각_(now, 업체);
+    let 때 = 발주예약시각_(now, 업체);
+    // 📦 26-10-18 사장님 「지금 17시에 넣으면 다시 모아 두었다가 22시에 나가는 시스템인 거지?」 → 그렇게 함
+    //    받을 날이 같은 예약이 아직 안 나갔으면 바로 보내지 않고 그 예약에 합쳐 같은 시각(22:00)에 한 통
+    if (!때) try {
+      const 받키 = Utilities.formatDate(받을날_(biz, 업체), 'Asia/Seoul', 'yyyy-MM-dd');
+      const 같은 = 대기예약_(업체).filter(function (x) { return x.받을날 === 받키; })[0];
+      if (같은) 때 = new Date(같은.at);
+    } catch (e) { console.log('예약 찾기 못 함(바로 보냄): ' + e.message); }
     if (!때) return true;
     예약하기_(업체, 업체별[업체], 오늘, biz, String(data.device || ''), 때);
     예약된.push({ supplier: 업체, ok: true, scheduled: true, at: 때글_(때) });
@@ -1339,12 +1372,23 @@ function 발주예약시각_(now, 업체) {
   const 다음 = new Date(biz); 다음.setDate(다음.getDate() + 1);
   const 받 = 받을날_(biz, 업체);
   if (우리쉬나_(biz) && 같은날_(받, 다음)) {
-    const 오늘저녁 = new Date(biz); 오늘저녁.setHours(20, 30, 0, 0);
+    const 오늘저녁 = new Date(biz); 오늘저녁.setHours(20, 30, 0, 0);   // 26-10-18 「22시로」 → 같은 날 「이전처럼 화요일 20시 30분」으로 되돌림
     return 오늘저녁.getTime() > now.getTime() ? 오늘저녁 : null;
   }
   if (같은날_(받, 다음)) return null;
   const 모레 = new Date(biz); 모레.setDate(모레.getDate() + 2);
   if (biz.getDay() === 1 && 시 < 14 && 같은날_(받, 모레)) return null;
+  /* 🔴 26-10-18 사장님 「식자재 발주 예약은 다음날 쉬는 날이 껴 있는 경우에만 · 화요일 같은 경우 매장에 아무도 없으니까 …
+        토·일 같은 경우는 토요일 담은 식자재는 일요일까지 유효하게끔만」
+     → 사이에 「우리 가게 휴무」나 「업체 임시휴무(직원앱에서 넣은 것)」가 낄 때만 예약
+       업체 정기휴무만 낀 것(미락 일요일)은 예약하지 않음 — 토요일에 담은 것이 일요일 바구니에 남음 (getCart 이어 담기) */
+  let 낌 = false;
+  for (let d = new Date(다음); d < 받; d.setDate(d.getDate() + 1)) {
+    if (우리쉬나_(d)) { 낌 = true; break; }
+    const k = Utilities.formatDate(d, 'Asia/Seoul', 'yyyy-MM-dd');
+    if (임시휴무_().some(function (h) { return h.대상 === 업체 && k >= h.시작 && k <= h.끝; })) { 낌 = true; break; }
+  }
+  if (!낌) return null;
   const 보낼 = new Date(받); 보낼.setDate(보낼.getDate() - 1); 보낼.setHours(20, 30, 0, 0);
   return 보낼.getTime() > now.getTime() ? 보낼 : null;
 }
@@ -1364,6 +1408,21 @@ function 대기예약_(업체) {
                받을날: Utilities.formatDate(받, 'Asia/Seoul', 'yyyy-MM-dd'), items: j.items || [] });
   });
   return out;
+}
+/* ⏰ 01시 일괄 발송 (26-10-18) — 5분마다 sendCartDue 가 부름 · 01:00~01:59 에 영업일마다 한 번 (스크립트 속성 표시)
+   cartSend_ 를 그대로 태움 → 가게 휴무 전날(월요일)이면 그 길에서 화요일 20:30 예약으로 감
+   ⚠️ 미락은 22:30 마감이라 01시에 나가면 사장님이 직접 01시에 보낸 것과 같음 (다음 납품일이 하루 밀릴 수 있음) */
+function 일괄발송01_(now) {
+  if (now.getHours() !== 1) return;
+  const biz = getBusinessDate(now), 오늘 = formatDate(biz), 표 = 'AUTO01_' + 오늘;
+  const P = PropertiesService.getScriptProperties();
+  if (P.getProperty(표)) return;
+  P.setProperty(표, String(now.getTime()));   // ⚠️ 먼저 표시 — 5분 뒤 다시 돌아도 두 번 안 나감
+  const cart = getCart(오늘), 대상 = cart.auto01 || [];
+  const items = cart.items.filter(function (it) { return 대상.indexOf(it.supplier) >= 0; });
+  if (!items.length) return;
+  console.log('⏰ 01시 일괄: ' + 대상.join(', '));
+  cartSend_({ items: items, device: '01시 일괄' });
 }
 function 때글_(d) {
   return (d.getMonth() + 1) + '/' + d.getDate() + '(' + ['일','월','화','수','목','금','토'][d.getDay()] + ') ' +
@@ -1555,6 +1614,7 @@ function sendCartDue() {
   const now = new Date();
   // 🕗 화요일 20:30 예약 (26-10-06) — ⚠️ 여기서 막혀도 아래 알림은 돌아야 합니다
   try { 예약보내기_(now); } catch (err) { alertFailure('예약 발주 발송 중 오류', '', err.message); }
+  try { 일괄발송01_(now); } catch (err) { alertFailure('01시 일괄 발주 중 오류', '', err.message); }
   const biz = getBusinessDate(now);
   const 오늘 = formatDate(biz);
   const cart = getCart(오늘);
