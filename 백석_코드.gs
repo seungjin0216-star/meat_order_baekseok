@@ -351,6 +351,14 @@ function doGet(e) {
     }
     return ContentService.createTextOutput(json).setMimeType(ContentService.MimeType.JSON);
   }
+  // 🔎 26-10-28 읽기만 — 발주가 서버에 들어왔는지 Claude 가 바로 확인 (사장님 「바로 확인할 수 있게 해 줘」)
+  //    월요일 고기 발주가 기록 0줄 · 알림톡도 안 옴 → 볼 길이 없어 원인을 못 가림. 아무것도 쓰거나 보내지 않음 · 전화번호 안 줌
+  if (p.action === 'orderLog') {
+    let json;
+    try { json = JSON.stringify(발주기록보기_(Math.min(Number(p.n) || 15, 60))); }
+    catch (err) { json = JSON.stringify({ ok: false, error: err.message }); }
+    return ContentService.createTextOutput(json).setMimeType(ContentService.MimeType.JSON);
+  }
   // ⚠️ 2026-10-01 — 매장앱 「오늘은」 카드가 읽어가는 길입니다. 아래 brief_() 참고
   if (p.action === 'brief') {
     let json;
@@ -948,6 +956,7 @@ function getCart(dateStr) {
   const 알림  = {};   // 「가져갈 것」을 이미 알린 업체
   const 발주알림  = {};   // [v4.0] 「발주 넣으세요」를 알린 시각 (영업일 기준 분)
   const 발주알림두번 = {};
+  const 보낸내용 = [];   // 📨 26-10-25 오늘 업체로 나간 문자의 품목
 
   /* 📦 26-10-18 이어 담기 — 사장님 「토요일 담은 식자재는 일요일까지 유효하게끔」
      오늘 바구니를 볼 때, 어제 담고 안 보낸 업체 중 「어제 보냈어도 오늘 보내도 받는 날이 같은」 업체(미락 토→일)는 어제 것을 오늘 바구니에 넣음
@@ -979,6 +988,11 @@ function getCart(dateStr) {
 
     if (상태 === '보냄' || 상태 === '보냄(실패)') {
       if (!보냄[업체]) 보냄[업체] = rowHHMM_(r[0]);
+      if (줄날짜 === date) {   // 📨 26-10-25 업체에 실제로 간 문자 품목 (품목 칸 = 문자 전문 · 둘째 줄부터 품목)
+        const 줄들 = String(r[4] || '').split('\n');
+        const 품목글 = (줄들.length > 1 ? 줄들.slice(1).join(' ') : 줄들[0]).replace(/^\s*\[[^\]]*\]\s*/, '').trim();
+        보낸내용.push({ supplier: 업체, at: rowHHMM_(r[0]), failed: 상태 === '보냄(실패)', items: 품목글.split(',').map(function (x) { return x.trim(); }).filter(Boolean) });
+      }
       continue;
     }
     // 🕗 [26-10-06] 예약 — 앱의 업체 줄에 「10/06 20:30 발송 예약」으로 보입니다. 나가면 「보냄」 줄이 이깁니다
@@ -1089,6 +1103,12 @@ function getCart(dateStr) {
   const 주류 = 주류상태_(date);
   if (주류.sent && !보냄['주류']) 보냄['주류'] = 주류.sent;
   let 예약목록 = []; try { 예약목록 = 대기예약_(''); } catch (e) {}
+  /* 📦 26-10-25 사장님 「토요일 저녁에 발주를 넣으면 저장돼 있는 상태로 일요일 발주에 같이 나가게 … 일요일 저녁 발주 전에도 확인 가능하게」
+     이어 온 업체의 어제 바구니를 그대로 (어제 날짜로 getCart → 이어 담기 안 함 · 같은 합치기 규칙) */
+  const 이어온품목 = {};
+  if (Object.keys(이어).length) try {
+    getCart(어제글).items.forEach(function (it) { if (이어[it.supplier]) (이어온품목[it.supplier] = 이어온품목[it.supplier] || []).push(it.item + (it.qty ? ' ' + it.qty : '')); });
+  } catch (e) {}
   /* ⏰ 26-10-18 01시 일괄 발송 대상 — 담겼는데 안 나간 업체 (주류는 따로 · 내일 업체가 쉬어 이어 담길 업체는 뺌)
      사장님 「콩나물을 담아 놓고 발주 안 하는 경우 … 00시 30분에 알림 · 01시에 일괄적으로 그냥 주문 보내 줘」 */
   const 일괄 = [];
@@ -1100,7 +1120,7 @@ function getCart(dateStr) {
   return { ok: true, date: date, items: 담긴것, sent: 보냄, liquor: 주류,
            notified: 알림, alerted: 발주알림, alertedTwice: 발주알림두번,
            deadlines: cartDeadlines_(biz),
-           auto01: 일괄, carried: Object.keys(이어),
+           auto01: 일괄, carried: Object.keys(이어), carriedItems: 이어온품목, sentDetail: 보낸내용.reverse(),
            reserved: 예약목록.map(function (x) { return { supplier: x.supplier, when: x.when, items: x.items.map(function (i) { return { item: i.item, qty: i.qty || '' }; }) }; }) };
 }
 
@@ -2848,3 +2868,21 @@ function 옛판깨우기_() {
     'localStorage.setItem(k,Date.now());try{flushChecks();flushCart();}catch(e){}setTimeout(function(){location.reload();},900);}}catch(e){}})();';
 }
 
+
+
+// 🔎 26-10-28 발주·입고·실패 기록 맨 아래 n줄 + 걸려 있는 고기 예약 (읽기만)
+function 발주기록보기_(n) {
+  const ss = SpreadsheetApp.openById(CONFIG.SPREADSHEET_ID), tz = Session.getScriptTimeZone();
+  const 끝줄 = function (이름, 칸) {
+    const sh = ss.getSheetByName(이름); if (!sh || sh.getLastRow() < 2) return [];
+    const k = Math.min(n, sh.getLastRow() - 1);
+    return sh.getRange(sh.getLastRow() - k + 1, 1, k, Math.min(칸, sh.getLastColumn())).getDisplayValues();
+  };
+  const 예약 = PropertiesService.getScriptProperties().getProperty('PENDING_MONDAY_ORDER');
+  return {
+    ok: true, now: Utilities.formatDate(new Date(), tz, 'yyyy-MM-dd HH:mm'),
+    발주기록: 끝줄(CONFIG.SHEET_ORDER, 15), 입고기록: 끝줄(CONFIG.SHEET_STOCK, 9), 발송실패: 끝줄('발송실패', 6),
+    고기예약: 예약 ? JSON.parse(예약) : null,
+    트리거: ScriptApp.getProjectTriggers().map(function (t) { return t.getHandlerFunction(); })
+  };
+}
