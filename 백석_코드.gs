@@ -353,6 +353,14 @@ function doGet(e) {
   }
   // 🔎 26-10-28 읽기만 — 발주가 서버에 들어왔는지 Claude 가 바로 확인 (사장님 「바로 확인할 수 있게 해 줘」)
   //    월요일 고기 발주가 기록 0줄 · 알림톡도 안 옴 → 볼 길이 없어 원인을 못 가림. 아무것도 쓰거나 보내지 않음 · 전화번호 안 줌
+  // 🔍 26-11-08 발주 바구니 최근 기록 — 읽기만 · 번호는 안 줌 (사장님 「일요일 20:30 지났는데 솔라피에 기록 없음 · 정확하게 문자 나가는지 확인」)
+  if (p.action === 'cartLog') {
+    const sh = getCartSheet_(), last = sh.getLastRow(), n = Math.min(Number(p.n) || 40, 200);
+    const rows = last < 2 ? [] : sh.getRange(Math.max(2, last - n + 1), 1, Math.min(n, last - 1), 8).getDisplayValues();
+    const fs = SpreadsheetApp.openById(CONFIG.SPREADSHEET_ID).getSheetByName('식자재발주'), fl = fs ? fs.getLastRow() : 0;
+    const food = fl < 2 ? [] : fs.getRange(Math.max(2, fl - 14), 1, Math.min(15, fl - 1), 6).getDisplayValues();
+    return ContentService.createTextOutput(JSON.stringify({ ok: true, now: Utilities.formatDate(new Date(), 'Asia/Seoul', 'yyyy-MM-dd HH:mm'), 바구니: rows, 식자재발주: food })).setMimeType(ContentService.MimeType.JSON);
+  }
   if (p.action === 'orderLog') {
     let json;
     try { json = JSON.stringify(발주기록보기_(Math.min(Number(p.n) || 15, 60))); }
@@ -753,6 +761,20 @@ function 다가오는휴무_(오늘) {
   const 오늘키 = 키(오늘);
   const 닷새 = new Date(오늘); 닷새.setDate(닷새.getDate() + 5);
   const 닷새키 = 키(닷새);
+  /* 🗓 26-11-07 사장님 「미락 휴무 D-1 이라고 금요일날 뜸. 그러면 당연히 헷갈리니 … 목요일에 무조건 하게끔」
+     D-day 는 휴무 첫날이 아니라 「마지막 발주일」 기준 — 휴무 전날에 받으려면 그 전날 밤에 넣어야 함
+       예) 미락 토·일 휴무 → 금요일 밤 발주는 토요일 배달이라 안 옴 → 마지막 발주 = 목요일
+     last = 오늘 이후로 거꾸로 세어 「받을 날이 휴무 전」인 마지막 영업일 (우리 휴무·다른 휴무도 건너뜀) · 가게 휴무(전체)는 그대로 */
+  const 마지막발주_ = function (h) {
+    if (h.대상 === '전체' || h.대상 === '주류') return '';
+    const 첫 = new Date(h.시작 + 'T12:00:00+09:00');
+    for (let i = 1; i <= 10; i++) {
+      const d = new Date(첫); d.setDate(d.getDate() - i); d.setHours(0, 0, 0, 0);
+      if (우리쉬나_(d)) continue;
+      if (키(받을날_(d, h.대상)) < h.시작) return 키(d);
+    }
+    return '';
+  };
   return 임시휴무_().filter(function (h) { return h.끝 >= 오늘키 && h.시작 <= 닷새키 && h.대상.indexOf('_취소') < 0; })
     .map(function (h) {
       const 전날 = new Date(h.시작 + 'T12:00:00+09:00'); 전날.setDate(전날.getDate() - 1); 전날.setHours(0, 0, 0, 0);
@@ -762,7 +784,7 @@ function 다가오는휴무_(오늘) {
         const t = new Date(받); t.setDate(t.getDate() - 1); t.setHours(20, 30, 0, 0);   // 26-10-18 22:00 으로 바꿨다가 같은 날 20:30 으로 되돌림 (사장님 「화요일 20시 30분 … 동일하게」)
         보낼 = 때글_(t);
       }
-      return { target: h.대상, from: h.시작, to: h.끝, sendAt: 보낼 };
+      return { target: h.대상, from: h.시작, to: h.끝, sendAt: 보낼, last: 마지막발주_(h) };
     });
 }
 
@@ -1468,7 +1490,12 @@ function 예약하기_(업체, items, 오늘, biz, device, 때) {
         sheet.getRange(from + i, 7).setValue('예약(합침)');      // ⚠️ 지우지 않습니다
       });
     }
-    const 글 = 모두.map(function (it) { return it.item + (it.qty ? ' ' + it.qty : ''); }).join(', ');
+    /* 🧮 26-11-08 사장님 「토요일에 부추 3, 일요일에 부추 2 → 총합 5로 나오면 되는데 각각 기록되어 있음」
+       ⚠️ 문자는 원래 sendCartFor_ 가 같은 품목을 더해서 「부추 5」로 나감 — 시트 기록 칸만 「부추 3, …, 부추 2」 였음
+       → 기록 칸도 문자와 같은 셈으로 (같은 이름은 수량 더함 · 수량 없는 것은 이름만) */
+    const 합 = {}, 순서 = [];
+    모두.forEach(function (it) { if (합[it.item] === undefined) { 합[it.item] = 0; 순서.push(it.item); } const n = parseFloat(it.qty); 합[it.item] += (isFinite(n) && n > 0) ? n : 0; });
+    const 글 = 순서.map(function (이름) { return 합[이름] > 0 ? 이름 + ' ' + 합[이름] : 이름; }).join(', ');
     sheet.appendRow([new Date(), 오늘, '백석점', 업체, 글,
                      때글_(때) + ' 발송',
                      '예약', device || '', JSON.stringify({ biz: biz.getTime(), at: 때.getTime(), items: 모두 })]);
