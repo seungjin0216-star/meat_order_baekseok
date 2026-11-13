@@ -717,7 +717,11 @@ function brief_(p) {
     const n = Math.min(500, cs.getLastRow() - 1);
     const v = cs.getRange(cs.getLastRow() - n + 1, 1, n, 9).getValues();
     v.forEach(function (r) {
-      const 줄날짜 = (r[1] instanceof Date) ? formatDate(r[1]) : String(r[1]).trim();
+      /* 🥬 26-11-14 사장님 「다음날 이월돼서 한 번에 보낸 미락에 대파 개수가 많은데 대파김치 계산기가 안 올라옴」
+         예약으로 나간 줄(폰 칸 「… 예약」)은 B칸이 「처음 담은 영업일」(금·토)이라 월요일의 「어제(일)」에 안 걸렸음
+         → 예약으로 나간 줄은 **실제로 보낸 시각(A)**의 영업일로 셈 · 바로 보낸 줄은 옛 그대로 B칸 */
+      const 예약줄 = String(r[7] || '').indexOf('예약') >= 0 && r[0] instanceof Date;
+      const 줄날짜 = 예약줄 ? formatDate(getBusinessDate(r[0])) : (r[1] instanceof Date) ? formatDate(r[1]) : String(r[1]).trim();
       if (날짜들.indexOf(줄날짜) < 0) return;
       if (String(r[2]).trim() !== 지점) return;
       if (String(r[6] || '') !== '보냄' && String(r[6] || '') !== '보냄(실패)') return;   // ⚠️ 「예약보냄」은 표시용이라 뺍니다
