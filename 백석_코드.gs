@@ -786,7 +786,8 @@ function 다가오는휴무_(오늘) {
       if (h.대상 !== '전체') {
         const 받 = 받을날_(전날, h.대상);
         const t = new Date(받); t.setDate(t.getDate() - 1); t.setHours(20, 30, 0, 0);   // 26-10-18 22:00 으로 바꿨다가 같은 날 20:30 으로 되돌림 (사장님 「화요일 20시 30분 … 동일하게」)
-        보낼 = 때글_(t);
+        // 26-11-15 보낼 날이 영업일이면 20:30 예약이 아니라 그날 밤 평소처럼 (발주예약시각_ 과 같은 기준)
+        보낼 = 우리쉬나_(t) ? 때글_(t) : 때글_(t).replace(/ \d\d:\d\d$/, '') + ' 밤 (평소처럼)';
       }
       return { target: h.대상, from: h.시작, to: h.끝, sendAt: 보낼, last: 마지막발주_(h) };
     });
@@ -987,16 +988,30 @@ function getCart(dateStr) {
   /* 📦 26-10-18 이어 담기 — 사장님 「토요일 담은 식자재는 일요일까지 유효하게끔」
      오늘 바구니를 볼 때, 어제 담고 안 보낸 업체 중 「어제 보냈어도 오늘 보내도 받는 날이 같은」 업체(미락 토→일)는 어제 것을 오늘 바구니에 넣음
      ⚠️ 오늘 화면(date 를 안 주거나 오늘)일 때만 · 어제가 우리 휴무면 안 함 */
-  const 이어 = {}, 어제 = new Date(biz); 어제.setDate(어제.getDate() - 1);
-  const 어제글 = formatDate(어제);
-  if (date === formatDate(biz) && !우리쉬나_(어제)) {
-    const 어제업체 = {}, 어제나감 = {};
-    rows.forEach(function (r) { const d = (r[1] instanceof Date) ? formatDate(r[1]) : String(r[1]); if (d !== 어제글) return;
-      const st = String(r[6]); if (st === '담김' || st === '정함') 어제업체[String(r[3])] = true; if (/^(보냄|예약)/.test(st)) 어제나감[String(r[3])] = true; });
-    Object.keys(어제업체).forEach(function (u) {
-      if (어제나감[u]) return;
-      try { if (같은날_(받을날_(어제, u), 받을날_(biz, u))) 이어[u] = true; } catch (e) {}
-    });
+  /* 📦 26-11-15 여러 날 이어 담기 — 금(보류)→토(보류)→일 처럼 이틀 넘게 모인 것도 보낼 날 바구니로
+     하루씩 거슬러 가며 「그날 받을 날 = 오늘 받을 날」인 동안만 · 우리 휴무일을 만나면 멈춤 (그 길은 20:30 예약) · 7일까지 */
+  const 이어 = {}, 이어날 = {};   // 이어[업체] = true · 이어날[업체][날짜글] = true
+  if (date === formatDate(biz)) {
+    const 날별 = {};   // 날짜글 → {담: {업체}, 나감: {업체}}
+    rows.forEach(function (r) { const d = (r[1] instanceof Date) ? formatDate(r[1]) : String(r[1]);
+      const st = String(r[6]), u = String(r[3]); const x = 날별[d] = 날별[d] || { 담: {}, 나감: {} };
+      if (st === '담김' || st === '정함') x.담[u] = true; if (/^(보냄|예약)/.test(st)) x.나감[u] = true; });
+    const 오늘받 = {}, 끊김 = {};   // 끊김[업체] — 더 가까운 날에 이미 나갔으면 그보다 옛날 것은 안 가져옴 (그때 같이 나갔음)
+    const 오늘x = 날별[formatDate(biz)]; if (오늘x) Object.keys(오늘x.나감).forEach(function (u) { 끊김[u] = true; });
+    for (let k = 1; k <= 7; k++) {
+      const d = new Date(biz); d.setDate(d.getDate() - k);
+      if (우리쉬나_(d)) break;
+      const 글 = formatDate(d), x = 날별[글]; if (!x) continue;
+      Object.keys(x.나감).forEach(function (u) { 끊김[u] = true; });
+      Object.keys(x.담).forEach(function (u) {
+        if (끊김[u]) return;
+        try {
+          if (오늘받[u] === undefined) 오늘받[u] = Utilities.formatDate(받을날_(biz, u), 'Asia/Seoul', 'yyyy-MM-dd');
+          if (Utilities.formatDate(받을날_(d, u), 'Asia/Seoul', 'yyyy-MM-dd') !== 오늘받[u]) return;
+          이어[u] = true; (이어날[u] = 이어날[u] || {})[글] = true;
+        } catch (e) {}
+      });
+    }
   }
 
   for (let i = rows.length - 1; i >= 0; i--) {
@@ -1006,7 +1021,7 @@ function getCart(dateStr) {
     //    시트가 날짜로 인식해 버린 줄만 formatDate 를 태웁니다.
     const 줄날짜 = (r[1] instanceof Date) ? formatDate(r[1]) : String(r[1]);
     if (줄날짜 !== date) {
-      if (!(줄날짜 === 어제글 && 이어[String(r[3])] && /^(담김|정함|끔|뺌)$/.test(String(r[6])))) continue;   // 📦 이어 담기
+      if (!(이어날[String(r[3])] && 이어날[String(r[3])][줄날짜] && /^(담김|정함|끔|뺌)$/.test(String(r[6])))) continue;   // 📦 이어 담기 (여러 날)
     }
 
     const 업체 = String(r[3]);
@@ -1133,7 +1148,8 @@ function getCart(dateStr) {
      이어 온 업체의 어제 바구니를 그대로 (어제 날짜로 getCart → 이어 담기 안 함 · 같은 합치기 규칙) */
   const 이어온품목 = {};
   if (Object.keys(이어).length) try {
-    getCart(어제글).items.forEach(function (it) { if (이어[it.supplier]) (이어온품목[it.supplier] = 이어온품목[it.supplier] || []).push(it.item + (it.qty ? ' ' + it.qty : '')); });
+    const 지난날들 = {}; Object.keys(이어날).forEach(function (u) { Object.keys(이어날[u]).forEach(function (g) { 지난날들[g] = true; }); });
+    Object.keys(지난날들).sort().forEach(function (g) { getCart(g).items.forEach(function (it) { if (이어날[it.supplier] && 이어날[it.supplier][g]) (이어온품목[it.supplier] = 이어온품목[it.supplier] || []).push(it.item + (it.qty ? ' ' + it.qty : '')); }); });
   } catch (e) {}
   /* ⏰ 26-10-18 01시 일괄 발송 대상 — 담겼는데 안 나간 업체 (주류는 따로 · 내일 업체가 쉬어 이어 담길 업체는 뺌)
      사장님 「콩나물을 담아 놓고 발주 안 하는 경우 … 00시 30분에 알림 · 01시에 일괄적으로 그냥 주문 보내 줘」 */
@@ -1328,6 +1344,11 @@ function cartSend_(data) {
   const 예약된 = [];
   순서 = 순서.filter(function (업체) {
     let 때 = 발주예약시각_(now, 업체);
+    if (때 === '보류') {   // 26-11-15 보낼 날이 영업일 — 지금 안 보내고 바구니에 둠 (그날 바구니로 넘어감)
+      예약된.push({ supplier: 업체, ok: true, held: true, at: '보낼 날 바구니로' });
+      console.log('⏸ 보류 (보낼 날 바구니로): ' + 업체);
+      return false;
+    }
     // 📦 26-10-18 사장님 「지금 17시에 넣으면 다시 모아 두었다가 22시에 나가는 시스템인 거지?」 → 그렇게 함
     //    받을 날이 같은 예약이 아직 안 나갔으면 바로 보내지 않고 그 예약에 합쳐 같은 시각(22:00)에 한 통
     if (!때) try {
@@ -1428,14 +1449,15 @@ function 발주예약시각_(now, 업체) {
         토·일 같은 경우는 토요일 담은 식자재는 일요일까지 유효하게끔만」
      → 사이에 「우리 가게 휴무」나 「업체 임시휴무(직원앱에서 넣은 것)」가 낄 때만 예약
        업체 정기휴무만 낀 것(미락 일요일)은 예약하지 않음 — 토요일에 담은 것이 일요일 바구니에 남음 (getCart 이어 담기) */
-  let 낌 = false;
-  for (let d = new Date(다음); d < 받; d.setDate(d.getDate() + 1)) {
-    if (우리쉬나_(d)) { 낌 = true; break; }
-    const k = Utilities.formatDate(d, 'Asia/Seoul', 'yyyy-MM-dd');
-    if (임시휴무_().some(function (h) { return h.대상 === 업체 && k >= h.시작 && k <= h.끝; })) { 낌 = true; break; }
-  }
-  if (!낌) return null;
-  const 보낼 = new Date(받); 보낼.setDate(보낼.getDate() - 1); 보낼.setHours(20, 30, 0, 0);
+  /* 🔴 26-11-15 사장님 「휴무일이고 다음날 정상근무일 때만 20:30 으로 보내게끔 한 거는 맞아.
+        단 지금이 일요일이고 20시일 경우 토요일부터 모으고 일요일에도 올렸던 품목들이 20:30 분에 보내지면 안 됨. 이 경우 평소처럼」
+        「20:30 으로 보내게끔 한 이유: 보내는 날이 가게 운영이 안 되고 있기에 더 이상 추가될 것이 없음 · 일요일의 경우 정상근무 중 … 더 추가해야 할 것들이 남아 있음」
+     → 보낼 날(받을 날 전날)이 **우리 가게 쉬는 날**이면 그날 20:30 예약 (옛 그대로)
+       보낼 날이 **영업일**이면 지금 안 보내고 바구니에 둠('보류') → 그날 바구니로 넘어가(이어 담기) 그날 밤 평소처럼 직원이 보냄
+     ⚠️ 26-10-18 「임시휴무가 끼면 예약」 → 바뀜 (11/8 일요일 20:30 에 토·일 것이 예약으로 나갔던 일) */
+  const 보낼 = new Date(받); 보낼.setDate(보낼.getDate() - 1);
+  if (!우리쉬나_(보낼)) return '보류';
+  보낼.setHours(20, 30, 0, 0);
   return 보낼.getTime() > now.getTime() ? 보낼 : null;
 }
 /* 📦 아직 안 나간 예약 (26-10-18) — 받을 날이 같은 지금 발주에 합치고 · 직원앱에 「이미 예약된 것」으로 보여 줌
@@ -1860,9 +1882,17 @@ function 바구니누락확인() {
   어제.setDate(어제.getDate() - 1);
   const cart = getCart(formatDate(어제));
 
+  /* 🔕 26-11-15 매주 토요일 「어제 미락 안 나감」 경보가 거짓이었음 (9/26 · 10/10 · 10/24 · 11/7 · 11/14 — 전부 토요일)
+     미락은 일요일 정기휴무라 토요일 바구니는 일요일 바구니로 이어짐(이어 담기) 또는 예약으로 넘어감 → 안 나간 게 정상
+     → 오늘 바구니로 넘어온 업체(carried) · 아직 안 나간 예약이 있는 업체는 빼고 셈 */
+  let 넘어감 = [];
+  try { 넘어감 = getCart(formatDate(getBusinessDate(now))).carried || []; } catch (e) {}
   const 안나간업체 = {};
   cart.items.forEach(function (it) {
-    if (!cart.sent[it.supplier]) 안나간업체[it.supplier] = true;
+    if (cart.sent[it.supplier]) return;
+    if (넘어감.indexOf(it.supplier) >= 0) return;
+    try { if (대기예약_(it.supplier).length) return; } catch (e) {}
+    안나간업체[it.supplier] = true;
   });
 
   const 목록 = Object.keys(안나간업체);
@@ -2207,7 +2237,7 @@ function handleStock(data) {
   const 입고정정 = 앞입고수 > 0;
   if (입고정정) console.log('정정 입고 | 앞 입고 ' + 앞입고수 + '줄 대체됨');
 
-  logStockToSheet(dateStr, gc, dc, mc, bs, extras);
+  const 입고줄 = logStockToSheet(dateStr, gc, dc, mc, bs, extras);
 
   const stockParts = [];
   if (gc > 0) stockParts.push('곱창 ' + gc + '개');
@@ -2223,6 +2253,11 @@ function handleStock(data) {
   };
   const s1 = sendAlimtalk(CONFIG.OWNER_NUMBER,  CONFIG.KAKAO.TEMPLATES.STOCK_REPORT, stockVars);
   const s2 = sendAlimtalk(CONFIG.VENDOR_NUMBER, CONFIG.KAKAO.TEMPLATES.STOCK_REPORT, stockVars);
+  /* 🔍 26-11-15 사장님 「11월 14일 입고가 (카톡으로) 안 갔음 · 솔라피에 실패 기록도 없음 · 이번 처음」
+     → 입고기록 J칸에 카톡 결과를 남김 (사장님 · 업체 각각 OK / 실패 사유) — 다음에 같은 일이 생기면 시트만 보면 됨
+     ⚠️ 손익은 A~H 만 읽음 · J 는 영향 없음 */
+  try { SpreadsheetApp.openById(CONFIG.SPREADSHEET_ID).getSheetByName(CONFIG.SHEET_STOCK).getRange(입고줄, 10)
+          .setValue('카톡 사장님 ' + (s1.ok ? 'OK' : '실패 ' + s1.error) + ' · 업체 ' + (s2.ok ? 'OK' : '실패 ' + s2.error) + ' · ' + 보낸시각_()); } catch (e) {}
 
   if (!s1.ok || !s2.ok) {
     alertFailure('입고 알림 발송 실패', stockSummary, (s1.error || s2.error));
@@ -2665,6 +2700,7 @@ function logStockToSheet(dateStr, gc, dc, mc, bs, extras) {
   }
   // [v5.1] H 상태 · I 보낸 시각 — ⚠️ 손익 GAS 는 A~G 만 읽습니다. 뒤에 붙여서 영향 없음
   sheet.appendRow([dateStr,'백석점',gc,dc,mc,bs,extras.join(', '),'',보낸시각_()]);
+  return sheet.getLastRow();
 }
 
 // [v2.0] 식자재 발주 기록
